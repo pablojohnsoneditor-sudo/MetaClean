@@ -1,0 +1,5 @@
+{
+  "name": "MetaClean",
+  "description": "Camuflagem adversarial de conteúdo para proteção contra reconhecimento por IA (CLIP, ResNet, Whisper).",
+  "requestFramePermissions": []
+}

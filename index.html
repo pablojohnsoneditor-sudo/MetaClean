@@ -368,13 +368,21 @@ let totalEps = 0, doneCount = 0;
 // ═══════════════════════════════════════════════════════════════════════════
 async function checkBackend() {
     try {
-        const r = await fetch(`${BACKEND}/health`, { signal: AbortSignal.timeout(4000) });
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 8000);
+        const r = await fetch(`${BACKEND}/health`, {
+            method: 'GET',
+            mode: 'cors',
+            signal: controller.signal
+        });
+        clearTimeout(timer);
         if (r.ok) {
             backendOnline = true;
             setStatus('backend', 'green', 'Backend ativo');
             document.getElementById('ft-backend').textContent = 'Backend: ativo';
-        } else throw new Error();
-    } catch {
+        } else throw new Error('status ' + r.status);
+    } catch(e) {
+        console.warn('[health]', e.message);
         backendOnline = false;
         setStatus('backend', 'red', 'Backend offline');
         document.getElementById('ft-backend').textContent = 'Backend: offline';

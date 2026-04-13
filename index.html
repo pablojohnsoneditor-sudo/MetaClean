@@ -865,8 +865,18 @@ async function processFile(obj) {
 // GEOMETRIC & COLOR TRANSFORMS (anti-pHash)
 // ═══════════════════════════════════════════════════════════════════════════
 
-function applyCropAndScale(canvas, ctx) {
-    const cropPct = 0.01 + Math.random() * 0.02; // 1-3%
+// Gera valores de transformação UMA VEZ (para consistência entre frames)
+function generateTransformParams() {
+    return {
+        cropPct: 0.01 + Math.random() * 0.02,       // 1-3%
+        hueShift: (Math.random() - 0.5) * 10,       // ±5 hue
+        satMult: 0.97 + Math.random() * 0.06,       // 97-103%
+        brMult: 0.97 + Math.random() * 0.06,        // 97-103%
+    };
+}
+
+function applyCropAndScale(canvas, ctx, params) {
+    const cropPct = params ? params.cropPct : (0.01 + Math.random() * 0.02);
     const cropX = Math.floor(canvas.width * cropPct);
     const cropY = Math.floor(canvas.height * cropPct);
     const srcW = canvas.width - cropX * 2;
@@ -880,7 +890,7 @@ function applyCropAndScale(canvas, ctx) {
 }
 
 function applyMicroRotation(canvas, ctx) {
-    const angle = (0.3 + Math.random() * 0.7) * (Math.random() > 0.5 ? 1 : -1); // 0.3-1.0°
+    const angle = (0.3 + Math.random() * 0.7) * (Math.random() > 0.5 ? 1 : -1);
     const rad = angle * Math.PI / 180;
     const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const tmpCanvas = document.createElement('canvas');
@@ -894,12 +904,12 @@ function applyMicroRotation(canvas, ctx) {
     ctx.restore();
 }
 
-function applyColorShift(ctx, w, h) {
+function applyColorShift(ctx, w, h, params) {
     const imgData = ctx.getImageData(0, 0, w, h);
     const d = imgData.data;
-    const hueShift = (Math.random() - 0.5) * 10;   // ±5 hue
-    const satMult = 0.97 + Math.random() * 0.06;    // 97-103%
-    const brMult = 0.97 + Math.random() * 0.06;     // 97-103%
+    const hueShift = params ? params.hueShift : ((Math.random() - 0.5) * 10);
+    const satMult = params ? params.satMult : (0.97 + Math.random() * 0.06);
+    const brMult = params ? params.brMult : (0.97 + Math.random() * 0.06);
     for (let i = 0; i < d.length; i += 4) {
         let r = d[i], g = d[i+1], b = d[i+2];
         // RGB to HSL (simplified fast path)
@@ -961,10 +971,10 @@ function generateIntroFrame(ctx, w, h) {
     ctx.putImageData(imgData, 0, 0);
 }
 
-function applyAllTransforms(canvas, ctx) {
-    applyCropAndScale(canvas, ctx);
-    applyMicroRotation(canvas, ctx);
-    applyColorShift(ctx, canvas.width, canvas.height);
+function applyAllTransforms(canvas, ctx, params) {
+    applyCropAndScale(canvas, ctx, params);
+    if (!params) applyMicroRotation(canvas, ctx); // Rotação só em imagens, não vídeo
+    applyColorShift(ctx, canvas.width, canvas.height, params);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1439,10 +1449,9 @@ async function processVideoLocal(obj, level) {
     setStep(obj.id, 0, 'done');
 
     // Calculate total frames for all phases
-    const extensionFrames = (level >= 2 && TARGET_DURATION > duration)
+    const extensionFrameCount = (level >= 2 && TARGET_DURATION > duration)
         ? Math.ceil((TARGET_DURATION - duration) * FPS) : 0;
-    const introOutroFrames = Math.round(FPS * 0.5) * 2;
-    const grandTotal = introOutroFrames + 1 + totalOriginalFrames + extensionFrames;
+    const grandTotal = 1 + totalOriginalFrames + 1 + extensionFrameCount; // capa + conteúdo + capa final + extensão
     const processStart = Date.now();
     let globalFrameIdx = 0;
 
@@ -1456,37 +1465,27 @@ async function processVideoLocal(obj, level) {
     // Collect processed frames as blobs
     const frameBlobs = [];
 
-    // Speed variation: 99-101% (anti temporal fingerprint)
-    const speedFactor = 0.99 + Math.random() * 0.02;
-    const effectiveFPS = FPS * speedFactor;
+    // Gerar params de transformação UMA VEZ (consistente entre frames)
+    const tParams = generateTransformParams();
 
-    // Intro frames (0.5s of unique gradient)
-    const introFrames = Math.round(FPS * 0.5);
-    for (let f = 0; f < introFrames; f++) {
-        generateIntroFrame(ctx, w, h);
-        let blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
-        frameBlobs.push(blob);
-        globalFrameIdx++;
-        updateFrameCounter(globalFrameIdx, grandTotal, 'Gerando intro...', processStart);
-    }
-
-    // First frame = cover (with transforms)
+    // Capa como primeiro frame (com transforms)
     ctx.drawImage(coverCanvas, 0, 0);
-    applyColorShift(ctx, w, h);
+    applyColorShift(ctx, w, h, tParams);
     applyFrameNoise(ctx, w, h, 42, eps, isTikTok, 0);
-    applyInvisiblePixels(ctx, w, h, 42);
     let blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
     frameBlobs.push(blob);
+    globalFrameIdx++;
+    updateFrameCounter(globalFrameIdx, grandTotal, 'Capa inserida', processStart);
 
     // Process original frames
     for (let f = 0; f < totalOriginalFrames; f++) {
-        video.currentTime = f / effectiveFPS;
+        video.currentTime = f / FPS;
         await new Promise(r => { video.onseeked = r; });
         ctx.drawImage(video, 0, 0, w, h);
 
-        // Geometric + color transforms on every frame
-        applyCropAndScale(canvas, ctx);
-        applyColorShift(ctx, w, h);
+        // Transforms consistentes (mesmos valores em todos os frames)
+        applyCropAndScale(canvas, ctx, tParams);
+        applyColorShift(ctx, w, h, tParams);
 
         // Level >= 2: overlay cover at low opacity
         if (level >= 2) {
@@ -1515,14 +1514,14 @@ async function processVideoLocal(obj, level) {
         if (f % 5 === 0) await tick();
     }
 
-    // Outro frames (0.5s of unique gradient)
-    for (let f = 0; f < introFrames; f++) {
-        generateIntroFrame(ctx, w, h);
-        blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
-        frameBlobs.push(blob);
-        globalFrameIdx++;
-        updateFrameCounter(globalFrameIdx, grandTotal, 'Gerando outro...', processStart);
-    }
+    // Último frame = capa (fecha com a mesma imagem)
+    ctx.drawImage(coverCanvas, 0, 0);
+    applyColorShift(ctx, w, h, tParams);
+    applyFrameNoise(ctx, w, h, 99999, eps, isTikTok, totalOriginalFrames);
+    blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+    frameBlobs.push(blob);
+    globalFrameIdx++;
+    updateFrameCounter(globalFrameIdx, grandTotal, 'Capa final inserida', processStart);
 
     setStep(obj.id, 1, 'done');
 

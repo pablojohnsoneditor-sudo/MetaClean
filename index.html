@@ -367,27 +367,14 @@
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="lib-chevron"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
         <div class="asset-library-body" id="lib-body">
-            <div class="asset-sections">
-                <!-- Áudios -->
-                <div>
-                    <div class="asset-section-title">🔊 Áudios de Camuflagem</div>
-                    <div class="asset-list" id="al-audio"></div>
-                    <button class="asset-upload-btn" id="btn-add-audio-asset">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                        Adicionar áudio ao banco
-                    </button>
-                    <input type="file" id="inp-audio-asset" hidden accept="audio/*">
-                </div>
-                <!-- Capas -->
-                <div>
-                    <div class="asset-section-title">🖼 Capas / Thumbnails</div>
-                    <div class="asset-list" id="al-cover"></div>
-                    <button class="asset-upload-btn" id="btn-add-cover-asset">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                        Adicionar capa ao banco
-                    </button>
-                    <input type="file" id="inp-cover-asset" hidden accept="image/*">
-                </div>
+            <div>
+                <div class="asset-section-title">🖼 Capas / Thumbnails</div>
+                <div class="asset-list" id="al-cover"></div>
+                <button class="asset-upload-btn" id="btn-add-cover-asset">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    Adicionar capa ao banco
+                </button>
+                <input type="file" id="inp-cover-asset" hidden accept="image/*">
             </div>
         </div>
     </div>
@@ -515,15 +502,12 @@ async function dbDelete(store, id) {
     });
 }
 
-let selectedAudioAsset = null;
 let selectedCoverAsset = null;
 
 async function renderAssetLibrary() {
-    const audios = await dbGetAll('audio');
     const covers = await dbGetAll('cover');
-    const total  = audios.length + covers.length;
+    const total  = covers.length;
     document.getElementById('lib-badge').textContent = `${total} ${total === 1 ? 'item' : 'itens'}`;
-    renderAssetList('al-audio', audios, 'audio');
     renderAssetList('al-cover', covers, 'cover');
 }
 
@@ -535,9 +519,7 @@ function renderAssetList(elId, items, store) {
         return;
     }
     items.forEach(item => {
-        const isSelected = store === 'audio'
-            ? selectedAudioAsset?.id === item.id
-            : selectedCoverAsset?.id === item.id;
+        const isSelected = selectedCoverAsset?.id === item.id;
         const div = document.createElement('div');
         div.className = `asset-item${isSelected ? ' active-asset' : ''}`;
         div.innerHTML = `
@@ -548,14 +530,12 @@ function renderAssetList(elId, items, store) {
                 <button class="asset-btn del">✕</button>
             </div>`;
         div.querySelector('.use').onclick = () => {
-            if (store === 'audio') selectedAudioAsset = isSelected ? null : item;
-            else                   selectedCoverAsset = isSelected ? null : item;
+            selectedCoverAsset = isSelected ? null : item;
             renderAssetLibrary();
         };
         div.querySelector('.del').onclick = async () => {
             await dbDelete(store, item.id);
-            if (store === 'audio' && selectedAudioAsset?.id === item.id) selectedAudioAsset = null;
-            if (store === 'cover' && selectedCoverAsset?.id === item.id) selectedCoverAsset = null;
+            if (selectedCoverAsset?.id === item.id) selectedCoverAsset = null;
             renderAssetLibrary();
         };
         el.appendChild(div);
@@ -591,15 +571,8 @@ document.getElementById('lib-toggle').addEventListener('click', () => {
     chev.style.transform = open ? 'rotate(180deg)' : '';
 });
 
-document.getElementById('btn-add-audio-asset').onclick = () => document.getElementById('inp-audio-asset').click();
 document.getElementById('btn-add-cover-asset').onclick = () => document.getElementById('inp-cover-asset').click();
 
-document.getElementById('inp-audio-asset').addEventListener('change', async function() {
-    const file = this.files[0]; if (!file) return;
-    await dbAdd('audio', { name: file.name, blob: file, created: Date.now() });
-    this.value = '';
-    renderAssetLibrary();
-});
 document.getElementById('inp-cover-asset').addEventListener('change', async function() {
     const file = this.files[0]; if (!file) return;
     await dbAdd('cover', { name: file.name, blob: file, created: Date.now() });
@@ -623,7 +596,6 @@ function handleFiles(files) {
         const obj = { id, file, type: getType(file.name), status: 'waiting', result: null,
                       extraAudio: null, extraCover: null };
         if (obj.type === 'video') {
-            if (selectedAudioAsset) obj.extraAudio = selectedAudioAsset.blob;
             if (selectedCoverAsset) obj.extraCover = selectedCoverAsset.blob;
         }
         filesData.push(obj);

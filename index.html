@@ -165,6 +165,20 @@
         @keyframes spin{to{transform:rotate(360deg)}}
         .spin{display:inline-block;animation:spin .8s linear infinite}
 
+        /* Frame counter */
+        .frame-counter{display:none;padding:.875rem 1.25rem;border-top:1px solid var(--border);background:rgba(108,99,255,.03)}
+        .frame-counter.active{display:block}
+        .fc-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem}
+        .fc-label{font-size:.72rem;font-weight:700;color:var(--purple);text-transform:uppercase;letter-spacing:.06em}
+        .fc-eta{font-size:.72rem;color:var(--muted);font-weight:600}
+        .fc-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:.625rem}
+        .fc-stat{text-align:center}
+        .fc-stat .fc-val{font-size:1.1rem;font-weight:800;color:var(--text)}
+        .fc-stat .fc-key{font-size:.65rem;color:var(--muted);margin-top:.1rem}
+        .fc-bar-wrap{height:6px;background:var(--card);border-radius:99px;overflow:hidden}
+        .fc-bar{height:100%;width:0%;background:linear-gradient(to right,var(--accent),var(--green));border-radius:99px;transition:width .15s}
+        .fc-phase{font-size:.68rem;color:var(--muted);margin-top:.4rem;font-style:italic}
+
         /* Validation */
         .val-panel{padding:1.25rem;border-top:1px solid var(--border);background:rgba(5,5,8,.3);display:none}
         .val-panel.open{display:block}
@@ -633,6 +647,20 @@ function renderCard(obj) {
             </div>
         </div>
         ${obj.type === 'video' ? renderVideoExtras(obj) : ''}
+        <div class="frame-counter" id="fc-${obj.id}">
+            <div class="fc-header">
+                <span class="fc-label">Processamento Frame-a-Frame</span>
+                <span class="fc-eta" id="fc-eta-${obj.id}">Calculando...</span>
+            </div>
+            <div class="fc-stats">
+                <div class="fc-stat"><div class="fc-val" id="fc-current-${obj.id}">0</div><div class="fc-key">Frame atual</div></div>
+                <div class="fc-stat"><div class="fc-val" id="fc-total-${obj.id}">—</div><div class="fc-key">Total</div></div>
+                <div class="fc-stat"><div class="fc-val" id="fc-pct-${obj.id}">0%</div><div class="fc-key">Progresso</div></div>
+                <div class="fc-stat"><div class="fc-val" id="fc-fps-${obj.id}">—</div><div class="fc-key">Frames/s</div></div>
+            </div>
+            <div class="fc-bar-wrap"><div class="fc-bar" id="fc-bar-${obj.id}"></div></div>
+            <div class="fc-phase" id="fc-phase-${obj.id}"></div>
+        </div>
         <div class="progress-wrap"><div class="progress-bar" id="pb-${obj.id}"></div></div>
         <div class="log-section">
             <div class="log-title"><span>Pipeline Log</span><span class="progress-text" id="pt-${obj.id}">0%</span></div>
@@ -1368,6 +1396,27 @@ async function processVideoLocal(obj, level) {
     const TARGET_DURATION = level === 3 ? 600 : level === 2 ? 300 : 0; // seconds
     const FPS = 30;
 
+    // Show frame counter
+    const fc = document.getElementById(`fc-${obj.id}`);
+    if (fc) fc.classList.add('active');
+
+    function updateFrameCounter(current, total, phase, startTime) {
+        const el = (id) => document.getElementById(id);
+        const pct = Math.round((current / total) * 100);
+        const elapsed = (Date.now() - startTime) / 1000;
+        const fps = current > 0 ? (current / elapsed).toFixed(1) : '—';
+        const remaining = current > 0 ? Math.round((total - current) / (current / elapsed)) : 0;
+        const eta = current > 0 ? (remaining > 60 ? `~${Math.ceil(remaining / 60)}min` : `~${remaining}s`) : 'Calculando...';
+
+        el(`fc-current-${obj.id}`).textContent = current;
+        el(`fc-total-${obj.id}`).textContent = total;
+        el(`fc-pct-${obj.id}`).textContent = pct + '%';
+        el(`fc-fps-${obj.id}`).textContent = fps;
+        el(`fc-eta-${obj.id}`).textContent = `ETA: ${eta}`;
+        el(`fc-bar-${obj.id}`).style.width = pct + '%';
+        el(`fc-phase-${obj.id}`).textContent = phase;
+    }
+
     // Step 0 — Decode video
     setStep(obj.id, 0, 'active');
     const video = await loadVideo(obj.file);
@@ -1389,6 +1438,14 @@ async function processVideoLocal(obj, level) {
 
     setStep(obj.id, 0, 'done');
 
+    // Calculate total frames for all phases
+    const extensionFrames = (level >= 2 && TARGET_DURATION > duration)
+        ? Math.ceil((TARGET_DURATION - duration) * FPS) : 0;
+    const introOutroFrames = Math.round(FPS * 0.5) * 2;
+    const grandTotal = introOutroFrames + 1 + totalOriginalFrames + extensionFrames;
+    const processStart = Date.now();
+    let globalFrameIdx = 0;
+
     // Step 1 — Process frames
     setStep(obj.id, 1, 'active');
 
@@ -1409,6 +1466,8 @@ async function processVideoLocal(obj, level) {
         generateIntroFrame(ctx, w, h);
         let blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
         frameBlobs.push(blob);
+        globalFrameIdx++;
+        updateFrameCounter(globalFrameIdx, grandTotal, 'Gerando intro...', processStart);
     }
 
     // First frame = cover (with transforms)
@@ -1450,12 +1509,10 @@ async function processVideoLocal(obj, level) {
 
         blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
         frameBlobs.push(blob);
+        globalFrameIdx++;
+        updateFrameCounter(globalFrameIdx, grandTotal, `Processando frame ${f + 1}/${totalOriginalFrames} do conteúdo original...`, processStart);
 
-        // Update progress
-        const pct = Math.round((f / totalOriginalFrames) * 50);
-        setProgress(obj.id, pct);
-
-        if (f % 10 === 0) await tick();
+        if (f % 5 === 0) await tick();
     }
 
     // Outro frames (0.5s of unique gradient)
@@ -1463,6 +1520,8 @@ async function processVideoLocal(obj, level) {
         generateIntroFrame(ctx, w, h);
         blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
         frameBlobs.push(blob);
+        globalFrameIdx++;
+        updateFrameCounter(globalFrameIdx, grandTotal, 'Gerando outro...', processStart);
     }
 
     setStep(obj.id, 1, 'done');
@@ -1471,15 +1530,13 @@ async function processVideoLocal(obj, level) {
     setStep(obj.id, 2, 'active');
 
     if (level >= 2 && TARGET_DURATION > duration) {
-        const extensionFrames = Math.ceil((TARGET_DURATION - duration) * FPS);
-        for (let f = 0; f < extensionFrames; f++) {
+        const extTotal = Math.ceil((TARGET_DURATION - duration) * FPS);
+        for (let f = 0; f < extTotal; f++) {
             ctx.drawImage(coverCanvas, 0, 0, w, h);
 
-            // Subtle noise on cover frames
             const seed = 50000 + f;
             applyFrameNoise(ctx, w, h, seed, Math.max(2, eps - 1), false, f);
 
-            // Level 3: heavier flashes on extension
             if (level === 3 && f % 8 === 0) {
                 const r = Math.floor(Math.random() * 256);
                 const g = Math.floor(Math.random() * 256);
@@ -1494,11 +1551,10 @@ async function processVideoLocal(obj, level) {
 
             blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
             frameBlobs.push(blob);
+            globalFrameIdx++;
+            updateFrameCounter(globalFrameIdx, grandTotal, `Extensão: frame ${f + 1}/${extTotal} (capa + noise)...`, processStart);
 
-            const pct = 50 + Math.round((f / extensionFrames) * 30);
-            setProgress(obj.id, pct);
-
-            if (f % 30 === 0) await tick();
+            if (f % 20 === 0) await tick();
         }
     }
 
@@ -1547,13 +1603,13 @@ async function processVideoLocal(obj, level) {
     recorder.start();
 
     // Draw each frame at the correct timing
+    const encodeStart = Date.now();
     for (let i = 0; i < frameBlobs.length; i++) {
         const img = await createImageBitmap(frameBlobs[i]);
         outCtx.drawImage(img, 0, 0, w, h);
         img.close();
 
-        const pct = 80 + Math.round((i / frameBlobs.length) * 18);
-        setProgress(obj.id, pct);
+        updateFrameCounter(i + 1, frameBlobs.length, `Re-encode: frame ${i + 1}/${frameBlobs.length}...`, encodeStart);
 
         await new Promise(r => setTimeout(r, 1000 / FPS));
     }

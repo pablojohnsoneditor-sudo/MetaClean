@@ -1035,6 +1035,8 @@ async function processVideo(obj) {
     form.append('video', obj.file);
     if (obj.extraAudio) form.append('audio', obj.extraAudio);
     if (obj.extraCover) form.append('cover', obj.extraCover);
+    form.append('level', selectedLevel.toString());
+    form.append('tiktok', document.getElementById('tgl-tiktok').checked.toString());
     setStep(obj.id, 0, 'done');
 
     // Step 1 — Inject Frames

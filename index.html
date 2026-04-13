@@ -187,10 +187,33 @@
         footer{text-align:center;padding:3rem 2rem;color:var(--muted);font-size:.8rem;display:flex;justify-content:center;align-items:center;gap:1.5rem;flex-wrap:wrap}
         .footer-dot{color:var(--border)}
 
+        /* Level Selector */
+        .level-panel{background:var(--surface);border:1px solid var(--border);border-radius:1rem;padding:1.25rem 1.5rem;margin-bottom:2rem}
+        .level-panel-title{font-size:.78rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:1rem;display:flex;align-items:center;gap:.5rem}
+        .level-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:.875rem}
+        .level-card{background:var(--card);border:2px solid var(--border);border-radius:.875rem;padding:1rem;cursor:pointer;transition:all .2s;text-align:center}
+        .level-card:hover{border-color:rgba(108,99,255,.3)}
+        .level-card.selected{border-color:var(--accent);background:rgba(108,99,255,.06)}
+        .level-card .lc-icon{font-size:1.5rem;margin-bottom:.5rem}
+        .level-card .lc-name{font-size:.875rem;font-weight:700;margin-bottom:.25rem}
+        .level-card .lc-desc{font-size:.7rem;color:var(--muted);line-height:1.4}
+        .level-card .lc-time{font-size:.68rem;color:var(--purple);font-weight:600;margin-top:.5rem}
+
+        /* Toggles */
+        .toggle-row{display:flex;align-items:center;gap:1.5rem;margin-top:1rem;flex-wrap:wrap}
+        .toggle-item{display:flex;align-items:center;gap:.5rem;font-size:.78rem;color:var(--muted)}
+        .toggle-switch{position:relative;width:36px;height:20px;cursor:pointer}
+        .toggle-switch input{display:none}
+        .toggle-track{position:absolute;inset:0;background:var(--card);border:1px solid var(--border);border-radius:99px;transition:all .2s}
+        .toggle-switch input:checked + .toggle-track{background:rgba(108,99,255,.3);border-color:var(--accent)}
+        .toggle-knob{position:absolute;top:2px;left:2px;width:14px;height:14px;background:var(--muted);border-radius:50%;transition:all .2s}
+        .toggle-switch input:checked ~ .toggle-knob{left:18px;background:var(--accent)}
+
         @media(max-width:700px){
             .hero h1{font-size:1.9rem}
             .stats-bar{grid-template-columns:1fr 1fr}
             .config-panel{grid-template-columns:1fr}
+            .level-cards{grid-template-columns:1fr}
             .asset-sections{grid-template-columns:1fr}
             .card-header{grid-template-columns:44px 1fr}
             .card-actions{grid-column:1/-1;justify-content:flex-end}
@@ -243,10 +266,10 @@
             <div class="flow-step">Export WAV</div>
         </div>
         <div class="pipeline-flow" id="flow-video">
-            <div class="flow-step highlight">Inject Frames</div><div class="flow-arrow">→</div>
-            <div class="flow-step highlight">Stego LSB (áudio)</div><div class="flow-arrow">→</div>
-            <div class="flow-step highlight">Remux FFmpeg</div><div class="flow-arrow">→</div>
-            <div class="flow-step highlight">Thumbnail embed</div><div class="flow-arrow">→</div>
+            <div class="flow-step">Decode Frames</div><div class="flow-arrow">→</div>
+            <div class="flow-step highlight">Capa + Noise/frame</div><div class="flow-arrow">→</div>
+            <div class="flow-step highlight">Overlay + Extensão</div><div class="flow-arrow">→</div>
+            <div class="flow-step highlight">Re-encode H.264</div><div class="flow-arrow">→</div>
             <div class="flow-step">MP4 pronto</div>
         </div>
     </div>
@@ -284,6 +307,52 @@
                 <span class="config-val" id="vl-pitch">+2 st</span>
             </div>
             <p class="config-desc">Semitons. Sobrevive à recompressão.</p>
+        </div>
+    </div>
+
+    <!-- Level Selector -->
+    <div class="level-panel">
+        <div class="level-panel-title">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            Nível de Camuflagem (Vídeo)
+        </div>
+        <div class="level-cards">
+            <div class="level-card selected" data-level="1" id="lc-1">
+                <div class="lc-icon">🛡</div>
+                <div class="lc-name">Nível 1 — Leve</div>
+                <div class="lc-desc">Capa no 1º frame + noise frame-a-frame. Duração original mantida.</div>
+                <div class="lc-time">Duração: original</div>
+            </div>
+            <div class="level-card" data-level="2" id="lc-2">
+                <div class="lc-icon">⚡</div>
+                <div class="lc-name">Nível 2 — Médio</div>
+                <div class="lc-desc">Tudo do N1 + overlay da capa + extensão do vídeo com capa estática.</div>
+                <div class="lc-time">Duração: ~5 minutos</div>
+            </div>
+            <div class="level-card" data-level="3" id="lc-3">
+                <div class="lc-icon">🔥</div>
+                <div class="lc-name">Nível 3 — Pesado</div>
+                <div class="lc-desc">Tudo do N2 + flashes de cor aleatórios + extensão máxima.</div>
+                <div class="lc-time">Duração: ~10 minutos</div>
+            </div>
+        </div>
+        <div class="toggle-row">
+            <label class="toggle-item">
+                <label class="toggle-switch">
+                    <input type="checkbox" id="tgl-local">
+                    <span class="toggle-track"></span>
+                    <span class="toggle-knob"></span>
+                </label>
+                Processar localmente (ignorar backend)
+            </label>
+            <label class="toggle-item">
+                <label class="toggle-switch">
+                    <input type="checkbox" id="tgl-tiktok">
+                    <span class="toggle-track"></span>
+                    <span class="toggle-knob"></span>
+                </label>
+                Modo TikTok
+            </label>
         </div>
     </div>
 
@@ -362,6 +431,7 @@ let backendOnline = false;
 let activeCardId  = null;
 let filesData     = [];
 let totalEps = 0, doneCount = 0;
+let selectedLevel = 1;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // BACKEND HEALTH CHECK
@@ -678,7 +748,9 @@ function buildStepHTML(type) {
     const steps = {
         image: ['Canvas Load', 'Sobel Edge Map', 'PGD Iterativo', 'ε-Ball Projection', 'Export PNG'],
         audio: ['Pitch Shift', 'Time Stretch', 'Ruído 300–3400 Hz', 'Ataque PGD/Whisper', 'Export WAV'],
-        video: ['Enviando para o backend', 'Inject Frames (OpenCV)', 'Steganografia LSB (áudio)', 'Remux FFmpeg (MP4)', 'Download pronto'],
+        video: (document.getElementById('tgl-local')?.checked || !backendOnline)
+            ? ['Decode + Capa', 'Noise frame-a-frame', 'Extensão de duração', 'Re-encode vídeo', 'Finalizado']
+            : ['Enviando para o backend', 'Inject Frames (OpenCV)', 'Steganografia LSB (áudio)', 'Remux FFmpeg (MP4)', 'Download pronto'],
     }[type] || ['Processar', 'Exportar'];
     return steps.map(s => `
         <div class="log-step">
@@ -760,7 +832,14 @@ async function processFile(obj) {
         let result;
         if      (obj.type === 'image') result = await processImage(obj, eps, iter);
         else if (obj.type === 'audio') result = await processAudio(obj, pitch, iter);
-        else                           result = await processVideo(obj);
+        else {
+            const forceLocal = document.getElementById('tgl-local').checked;
+            if (backendOnline && !forceLocal) {
+                result = await processVideo(obj);
+            } else {
+                result = await processVideoLocal(obj, selectedLevel);
+            }
+        }
 
         obj.status = 'done';
         obj.result = result;
@@ -950,23 +1029,47 @@ function renderValidation(obj, eps, pitch, processingTime) {
             <div class="val-row"><span class="key">Inteligibilidade</span><span class="val good">Preservada</span></div>
         </div>`;
     } else {
-        cards = `
-        <div class="val-card">
-            <div class="val-card-title">Inject Frames</div>
-            <div class="val-row"><span class="key">Capa</span><span class="val ${r.hasExtraCover ? 'good' : 'warn'}">${r.hasExtraCover ? 'Imagem do banco' : 'Sem capa enviada'}</span></div>
-            <div class="val-row"><span class="key">Frames injetados</span><span class="val good">30 frames</span></div>
-        </div>
-        <div class="val-card">
-            <div class="val-card-title">Steganografia LSB</div>
-            <div class="val-row"><span class="key">Áudio</span><span class="val ${r.hasExtraAudio ? 'good' : 'warn'}">${r.hasExtraAudio ? 'Áudio externo' : 'Sem áudio extra'}</span></div>
-            <div class="val-row"><span class="key">Bits escondidos</span><span class="val good">98.304 bits</span></div>
-        </div>
-        <div class="val-card">
-            <div class="val-card-title">Vídeo Final</div>
-            <div class="val-row"><span class="key">Formato</span><span class="val">MP4 (H.264 + AAC)</span></div>
-            <div class="val-row"><span class="key">Thumbnail</span><span class="val good">attached_pic</span></div>
-            <div class="val-row"><span class="key">Backend</span><span class="val good">✓ PGD real</span></div>
-        </div>`;
+        const levelNames = { 1: 'Leve', 2: 'Médio', 3: 'Pesado' };
+        if (r.level) {
+            cards = `
+            <div class="val-card">
+                <div class="val-card-title">Camuflagem Client-Side</div>
+                <div class="val-row"><span class="key">Nível</span><span class="val good">${r.level} — ${levelNames[r.level]}</span></div>
+                <div class="val-row"><span class="key">Modo TikTok</span><span class="val ${r.isTikTok ? 'good' : ''}">${r.isTikTok ? '✓ Ativo' : 'Desativado'}</span></div>
+                <div class="val-row"><span class="key">Capa</span><span class="val ${r.hasExtraCover ? 'good' : 'warn'}">${r.hasExtraCover ? 'Asset do banco' : 'Frame 1 (auto)'}</span></div>
+            </div>
+            <div class="val-card">
+                <div class="val-card-title">Processamento</div>
+                <div class="val-row"><span class="key">Frames processados</span><span class="val good">${r.totalFrames}</span></div>
+                <div class="val-row"><span class="key">Noise ε</span><span class="val">${eps}/8</span></div>
+                <div class="val-row"><span class="key">Overlay capa</span><span class="val ${r.level >= 2 ? 'good' : ''}">${r.level >= 2 ? '6% opacidade' : 'Não'}</span></div>
+                <div class="val-row"><span class="key">Flashes cor</span><span class="val ${r.level === 3 ? 'good' : ''}">${r.level === 3 ? '✓ Ativos' : 'Não'}</span></div>
+            </div>
+            <div class="val-card">
+                <div class="val-card-title">Duração</div>
+                <div class="val-row"><span class="key">Original</span><span class="val">${r.originalDuration}s</span></div>
+                <div class="val-row"><span class="key">Final</span><span class="val good">${r.finalDuration}s</span></div>
+                <div class="val-row"><span class="key">Metadados</span><span class="val good">✓ Removidos (re-encode)</span></div>
+            </div>`;
+        } else {
+            cards = `
+            <div class="val-card">
+                <div class="val-card-title">Backend Python</div>
+                <div class="val-row"><span class="key">Capa</span><span class="val ${r.hasExtraCover ? 'good' : 'warn'}">${r.hasExtraCover ? 'Imagem do banco' : 'Sem capa enviada'}</span></div>
+                <div class="val-row"><span class="key">Frames injetados</span><span class="val good">30 frames</span></div>
+            </div>
+            <div class="val-card">
+                <div class="val-card-title">Steganografia LSB</div>
+                <div class="val-row"><span class="key">Áudio</span><span class="val ${r.hasExtraAudio ? 'good' : 'warn'}">${r.hasExtraAudio ? 'Áudio externo' : 'Sem áudio extra'}</span></div>
+                <div class="val-row"><span class="key">Bits escondidos</span><span class="val good">98.304 bits</span></div>
+            </div>
+            <div class="val-card">
+                <div class="val-card-title">Vídeo Final</div>
+                <div class="val-row"><span class="key">Formato</span><span class="val">MP4 (H.264 + AAC)</span></div>
+                <div class="val-row"><span class="key">Thumbnail</span><span class="val good">attached_pic</span></div>
+                <div class="val-row"><span class="key">Backend</span><span class="val good">✓ PGD real</span></div>
+            </div>`;
+        }
     }
 
     el.innerHTML = `
@@ -1076,6 +1179,305 @@ document.getElementById('btn-zip').onclick = async () => {
     triggerDownload(URL.createObjectURL(blob), `metaclean_${Date.now()}.zip`);
     btn.disabled = false; btn.textContent = '↓ Baixar ZIP';
 };
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LEVEL SELECTOR
+// ═══════════════════════════════════════════════════════════════════════════
+document.querySelectorAll('.level-card').forEach(card => {
+    card.addEventListener('click', () => {
+        document.querySelectorAll('.level-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        selectedLevel = parseInt(card.dataset.level);
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// VIDEO CLIENT-SIDE PIPELINE
+// ═══════════════════════════════════════════════════════════════════════════
+
+function extractFirstFrame(video) {
+    return new Promise((res) => {
+        const c = document.createElement('canvas');
+        c.width = video.videoWidth; c.height = video.videoHeight;
+        const ctx = c.getContext('2d');
+        ctx.drawImage(video, 0, 0);
+        res(c);
+    });
+}
+
+function loadVideo(file) {
+    return new Promise((res, rej) => {
+        const video = document.createElement('video');
+        video.muted = true; video.playsInline = true; video.preload = 'auto';
+        video.src = URL.createObjectURL(file);
+        video.onloadeddata = () => { video.currentTime = 0; };
+        video.onseeked = () => res(video);
+        video.onerror = () => rej(new Error('Erro ao carregar vídeo'));
+    });
+}
+
+function applyFrameNoise(ctx, w, h, seed, eps, isTikTok, frameIdx) {
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const data = imgData.data;
+    const total = w * h;
+    const blockSize = total > 2e6 ? 8 : total > 1e6 ? 6 : 4;
+    let s = seed >>> 0;
+    const tiktokMultiplier = isTikTok && (frameIdx % 2 === 1) ? 1.5 : 1.0;
+    const tiktokInvert = isTikTok && (frameIdx % 2 === 1);
+
+    for (let y = 0; y < h; y += blockSize) {
+        for (let x = 0; x < w; x += blockSize) {
+            s ^= s << 13; s ^= s >> 17; s ^= s << 5; s = s >>> 0;
+            const direction = (x + y >> 2) & 1 ? 1 : -1;
+            const magnitude = (eps + (s % 3 - 1)) * direction * tiktokMultiplier;
+            const endX = Math.min(x + blockSize, w);
+            const endY = Math.min(y + blockSize, h);
+            for (let py = y; py < endY; py++) {
+                for (let px = x; px < endX; px++) {
+                    const i = (py * w + px) * 4;
+                    if (tiktokInvert) {
+                        data[i]     = Math.max(0, Math.min(255, data[i] - magnitude));
+                        data[i + 1] = Math.max(0, Math.min(255, data[i + 1] - magnitude));
+                        data[i + 2] = Math.max(0, Math.min(255, data[i + 2] + magnitude));
+                    } else {
+                        data[i]     = Math.max(0, Math.min(255, data[i] + magnitude));
+                        data[i + 1] = Math.max(0, Math.min(255, data[i + 1] + magnitude));
+                        data[i + 2] = Math.max(0, Math.min(255, data[i + 2] - magnitude));
+                    }
+                }
+            }
+        }
+    }
+    ctx.putImageData(imgData, 0, 0);
+}
+
+function applyInvisiblePixels(ctx, w, h, seed) {
+    let s = seed >>> 0;
+    ctx.save();
+    for (let i = 0; i < 6; i++) {
+        s ^= s << 13; s ^= s >> 17; s ^= s << 5; s = s >>> 0;
+        const px = s % w;
+        s ^= s << 13; s ^= s >> 17; s ^= s << 5; s = s >>> 0;
+        const py = s % h;
+        const c = s & 1 ? 0 : 255;
+        ctx.fillStyle = `rgba(${c},${c},${c},0.01)`;
+        ctx.fillRect(px, py, 1, 1);
+    }
+    ctx.restore();
+}
+
+function applyColorFlash(ctx, w, h, frameIdx) {
+    if (frameIdx % 15 !== 0) return;
+    const r = Math.floor(Math.random() * 256);
+    const g = Math.floor(Math.random() * 256);
+    const b = Math.floor(Math.random() * 256);
+    ctx.save();
+    ctx.globalAlpha = 0.08;
+    ctx.fillStyle = `rgb(${r},${g},${b})`;
+    ctx.fillRect(0, 0, w, h);
+    ctx.globalAlpha = 1;
+    ctx.restore();
+}
+
+async function processVideoLocal(obj, level) {
+    const t0 = Date.now();
+    const eps = parseInt(document.getElementById('sl-eps').value);
+    const isTikTok = document.getElementById('tgl-tiktok').checked;
+    const TARGET_DURATION = level === 3 ? 600 : level === 2 ? 300 : 0; // seconds
+    const FPS = 30;
+
+    // Step 0 — Decode video
+    setStep(obj.id, 0, 'active');
+    const video = await loadVideo(obj.file);
+    const w = video.videoWidth;
+    const h = video.videoHeight;
+    const duration = video.duration;
+    const totalOriginalFrames = Math.ceil(duration * FPS);
+
+    // Get cover image (from asset bank or first frame)
+    const coverCanvas = document.createElement('canvas');
+    coverCanvas.width = w; coverCanvas.height = h;
+    const coverCtx = coverCanvas.getContext('2d');
+    if (obj.extraCover) {
+        const coverImg = await loadImg(obj.extraCover);
+        coverCtx.drawImage(coverImg, 0, 0, w, h);
+    } else {
+        coverCtx.drawImage(video, 0, 0);
+    }
+
+    setStep(obj.id, 0, 'done');
+
+    // Step 1 — Process frames
+    setStep(obj.id, 1, 'active');
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+
+    // Collect processed frames as blobs
+    const frameBlobs = [];
+
+    // First frame = cover
+    ctx.drawImage(coverCanvas, 0, 0);
+    applyFrameNoise(ctx, w, h, 42, eps, isTikTok, 0);
+    applyInvisiblePixels(ctx, w, h, 42);
+    let blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+    frameBlobs.push(blob);
+
+    // Process original frames
+    for (let f = 0; f < totalOriginalFrames; f++) {
+        video.currentTime = f / FPS;
+        await new Promise(r => { video.onseeked = r; });
+        ctx.drawImage(video, 0, 0, w, h);
+
+        // Level >= 2: overlay cover at low opacity
+        if (level >= 2) {
+            ctx.save();
+            ctx.globalAlpha = 0.06;
+            ctx.drawImage(coverCanvas, 0, 0, w, h);
+            ctx.globalAlpha = 1;
+            ctx.restore();
+        }
+
+        // Noise on every frame
+        const seed = 1000 + f;
+        applyFrameNoise(ctx, w, h, seed, eps, isTikTok, f);
+
+        // Invisible pixels on some frames
+        if (f % 3 === 0) applyInvisiblePixels(ctx, w, h, seed);
+
+        // Level 3: color flashes
+        if (level === 3) applyColorFlash(ctx, w, h, f);
+
+        blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+        frameBlobs.push(blob);
+
+        // Update progress
+        const pct = Math.round((f / totalOriginalFrames) * 50);
+        setProgress(obj.id, pct);
+
+        if (f % 10 === 0) await tick();
+    }
+
+    setStep(obj.id, 1, 'done');
+
+    // Step 2 — Extension frames (level 2 & 3)
+    setStep(obj.id, 2, 'active');
+
+    if (level >= 2 && TARGET_DURATION > duration) {
+        const extensionFrames = Math.ceil((TARGET_DURATION - duration) * FPS);
+        for (let f = 0; f < extensionFrames; f++) {
+            ctx.drawImage(coverCanvas, 0, 0, w, h);
+
+            // Subtle noise on cover frames
+            const seed = 50000 + f;
+            applyFrameNoise(ctx, w, h, seed, Math.max(2, eps - 1), false, f);
+
+            // Level 3: heavier flashes on extension
+            if (level === 3 && f % 8 === 0) {
+                const r = Math.floor(Math.random() * 256);
+                const g = Math.floor(Math.random() * 256);
+                const b = Math.floor(Math.random() * 256);
+                ctx.save();
+                ctx.globalAlpha = 0.12;
+                ctx.fillStyle = `rgb(${r},${g},${b})`;
+                ctx.fillRect(0, 0, w, h);
+                ctx.globalAlpha = 1;
+                ctx.restore();
+            }
+
+            blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+            frameBlobs.push(blob);
+
+            const pct = 50 + Math.round((f / extensionFrames) * 30);
+            setProgress(obj.id, pct);
+
+            if (f % 30 === 0) await tick();
+        }
+    }
+
+    setStep(obj.id, 2, 'done');
+
+    // Step 3 — Encode to MP4 via MediaRecorder
+    setStep(obj.id, 3, 'active');
+
+    const outCanvas = document.createElement('canvas');
+    outCanvas.width = w; outCanvas.height = h;
+    const outCtx = outCanvas.getContext('2d');
+
+    const stream = outCanvas.captureStream(FPS);
+
+    // Add audio track if available
+    let audioBlob = null;
+    if (obj.extraAudio || obj.file.type.startsWith('video')) {
+        try {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const audioSource = obj.extraAudio || obj.file;
+            const arrayBuf = await audioSource.arrayBuffer();
+            const audioBuf = await audioCtx.decodeAudioData(arrayBuf);
+
+            const dest = audioCtx.createMediaStreamDestination();
+            const source = audioCtx.createBufferSource();
+            source.buffer = audioBuf;
+            source.connect(dest);
+            source.start();
+
+            stream.addTrack(dest.stream.getAudioTracks()[0]);
+        } catch (e) {
+            console.warn('[Audio track]', e.message);
+        }
+    }
+
+    const chunks = [];
+    const recorder = new MediaRecorder(stream, {
+        mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' :
+                  MediaRecorder.isTypeSupported('video/webm;codecs=vp8') ? 'video/webm;codecs=vp8' :
+                  'video/webm',
+        videoBitsPerSecond: 4000000
+    });
+    recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+
+    const recDone = new Promise(r => { recorder.onstop = r; });
+    recorder.start();
+
+    // Draw each frame at the correct timing
+    for (let i = 0; i < frameBlobs.length; i++) {
+        const img = await createImageBitmap(frameBlobs[i]);
+        outCtx.drawImage(img, 0, 0, w, h);
+        img.close();
+
+        const pct = 80 + Math.round((i / frameBlobs.length) * 18);
+        setProgress(obj.id, pct);
+
+        await new Promise(r => setTimeout(r, 1000 / FPS));
+    }
+
+    recorder.stop();
+    await recDone;
+
+    setStep(obj.id, 3, 'done');
+
+    // Step 4 — Final
+    setStep(obj.id, 4, 'active');
+    const finalBlob = new Blob(chunks, { type: recorder.mimeType });
+    const ext = recorder.mimeType.includes('mp4') ? 'mp4' : 'webm';
+    setStep(obj.id, 4, 'done');
+
+    return {
+        url: URL.createObjectURL(finalBlob),
+        name: `adv_${obj.file.name.replace(/\.[^.]+$/, '.' + ext)}`,
+        blob: finalBlob,
+        processingTime: ((Date.now() - t0) / 1000).toFixed(1) + 's',
+        backend: false,
+        level,
+        isTikTok,
+        hasExtraAudio: !!obj.extraAudio,
+        hasExtraCover: !!obj.extraCover,
+        originalDuration: duration.toFixed(1),
+        finalDuration: (level >= 2 ? TARGET_DURATION : duration).toFixed(1),
+        totalFrames: frameBlobs.length
+    };
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // INIT

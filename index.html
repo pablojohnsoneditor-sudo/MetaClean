@@ -1206,9 +1206,7 @@
 
         function checkProcessButton() {
             const btn = document.getElementById('btn-process');
-            // Audio is optional if White Script is active with text
-            const audioOk = selectedFiles.audio || (wsEnabled && wsText && wsText.value.trim().length > 0);
-            const isReady = selectedFiles.video && selectedFiles.image && audioOk;
+            const isReady = selectedFiles.video && selectedFiles.image;
             btn.disabled = !isReady;
         }
 

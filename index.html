@@ -24,9 +24,10 @@
 
         /* Header */
         header{position:sticky;top:0;z-index:100;background:rgba(5,5,8,.9);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);padding:.875rem 2rem;display:flex;justify-content:space-between;align-items:center}
-        .logo{display:flex;align-items:center;gap:.75rem;font-weight:300;font-size:1.2rem;letter-spacing:.01em}
+        .logo{display:flex;align-items:center;gap:.75rem;font-size:1.2rem;letter-spacing:.01em}
         .logo svg{color:var(--accent);width:26px;height:26px}
-        .logo span span{color:var(--text);font-weight:300}
+        .logo .logo-meta{font-weight:800;letter-spacing:-.01em;color:var(--text)}
+        .logo .logo-clean{font-weight:200;letter-spacing:.08em;color:var(--muted);font-size:1.05rem}
         .header-right{display:flex;align-items:center;gap:1rem}
         .status-pill{display:flex;align-items:center;gap:.4rem;padding:.3rem .8rem;border-radius:99px;font-size:.75rem;font-weight:600;border:1px solid var(--border);background:var(--surface)}
         .status-dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
@@ -286,7 +287,7 @@
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
             <path d="M9 12l2 2 4-4"/>
         </svg>
-        <span>Meta<span>Clean</span></span>
+        <span class="logo-meta">Meta</span><span class="logo-clean">Clean</span>
     </div>
     <div class="header-right">
         <div style="display:none"><div class="status-dot" id="dot-backend"></div><span id="lbl-backend">Backend offline</span></div>

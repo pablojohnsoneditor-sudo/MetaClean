@@ -251,6 +251,11 @@
         .btn-ws-preview:hover{border-color:var(--accent);color:var(--accent)}
         .btn-ws-preview.speaking{color:var(--orange);border-color:var(--orange)}
         .ws-info{font-size:.68rem;color:var(--muted);line-height:1.5}
+        .ws-audio-row{display:flex;align-items:center;gap:.6rem;background:var(--card);border:1px dashed var(--border);border-radius:.5rem;padding:.45rem .75rem;font-size:.75rem;color:var(--muted);cursor:pointer;transition:all .2s}
+        .ws-audio-row:hover{border-color:var(--accent);color:var(--accent)}
+        .ws-audio-row.has-file{border-color:rgba(16,185,129,.35);color:var(--green);border-style:solid}
+        .ws-audio-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+        .ws-audio-clear{background:transparent;border:none;color:var(--red);cursor:pointer;font-size:.8rem;padding:0 .2rem;line-height:1}
         .ws-toggle-row{display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.8rem;color:var(--muted);font-weight:600}
         .ws-switch{width:36px;height:20px;background:var(--border);border-radius:10px;position:relative;transition:background .2s;cursor:pointer;flex-shrink:0}
         .ws-switch.on{background:var(--accent)}
@@ -434,7 +439,13 @@
                     <input type="range" id="ws-mix-slider" min="-40" max="-15" value="-28" style="flex:1;accent-color:var(--accent)">
                     <span style="font-size:.75rem;font-weight:700;color:#E8CFA0;min-width:38px" id="ws-mix-val">-28dB</span>
                 </div>
-                <p class="ws-info">O texto é convertido em fala e injetado em bandas de frequência que STT (Whisper, Google ASR) prioriza — inaudível ao público por mascaramento psicoacústico.</p>
+                <div class="ws-audio-row" id="ws-audio-row" title="Carregar áudio TTS gravado para injeção real">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    <span class="ws-audio-name" id="ws-audio-name">Carregar áudio TTS para injeção (MP3/WAV)</span>
+                    <button class="ws-audio-clear" id="ws-audio-clear" style="display:none" title="Remover áudio">✕</button>
+                </div>
+                <input type="file" id="inp-ws-audio" accept="audio/*" style="display:none">
+                <p class="ws-info">Carregue um áudio TTS gravado para injeção real no arquivo. Sem áudio carregado, apenas a perturbação psicoacústica é aplicada.</p>
             </div>
         </div>
     </div>
@@ -1116,28 +1127,36 @@ async function applyWhiteScriptLayer(arrayBuffer, mixDb, lang) {
     return encodeWAV(channels, sr);
 }
 
-async function captureTTS(text, lang) {
-    return new Promise(resolve => {
-        try {
-            const audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 44100 });
-            const dest     = audioCtx.createMediaStreamDestination();
-            const recorder = new MediaRecorder(dest.stream);
-            const chunks   = [];
-            recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-            recorder.onstop = async () => {
-                const buf = await new Blob(chunks).arrayBuffer();
-                audioCtx.close();
-                resolve(buf.byteLength > 1000 ? buf : null);
-            };
-            const u = new SpeechSynthesisUtterance(text);
-            u.lang = lang; u.rate = 0.9;
-            u.onstart = () => recorder.start();
-            u.onend   = () => setTimeout(() => recorder.stop(), 300);
-            u.onerror = () => { try { recorder.stop(); } catch(e){} resolve(null); };
-            setTimeout(() => { speechSynthesis.cancel(); try { if (recorder.state === 'recording') recorder.stop(); } catch(e){} }, 30000);
-            speechSynthesis.speak(u);
-        } catch(e) { resolve(null); }
+// wsAudioFile: ArrayBuffer of user-uploaded TTS audio for injection
+let wsAudioFile = null;
+
+(function initWSAudio() {
+    const row   = document.getElementById('ws-audio-row');
+    const inp   = document.getElementById('inp-ws-audio');
+    const name  = document.getElementById('ws-audio-name');
+    const clear = document.getElementById('ws-audio-clear');
+
+    row.addEventListener('click', e => { if (e.target !== clear) inp.click(); });
+    inp.addEventListener('change', async () => {
+        const f = inp.files[0]; if (!f) return;
+        wsAudioFile = await f.arrayBuffer();
+        name.textContent = f.name;
+        row.classList.add('has-file');
+        clear.style.display = '';
+        inp.value = '';
     });
+    clear.addEventListener('click', e => {
+        e.stopPropagation();
+        wsAudioFile = null;
+        name.textContent = 'Carregar áudio TTS para injeção (MP3/WAV)';
+        row.classList.remove('has-file');
+        clear.style.display = 'none';
+    });
+})();
+
+async function captureTTS(text, lang) {
+    // Return the user-uploaded TTS file if available; otherwise null (no injection)
+    return wsAudioFile ? wsAudioFile.slice(0) : null;
 }
 
 async function processAudio(obj, pitch, iter) {

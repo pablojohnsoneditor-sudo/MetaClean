@@ -284,7 +284,7 @@
         <span>Meta<span>Clean</span></span>
     </div>
     <div class="header-right">
-        <div class="status-pill"><div class="status-dot" id="dot-backend"></div><span id="lbl-backend">Backend offline</span></div>
+        <div style="display:none"><div class="status-dot" id="dot-backend"></div><span id="lbl-backend">Backend offline</span></div>
     </div>
 </header>
 
@@ -294,34 +294,11 @@
         <p>Rejeição virou coisa do passado.</p>
     </section>
 
-    <!-- Pipeline tabs -->
-    <div class="pipeline-box">
-        <div class="pipeline-tabs">
-            <button class="tab-btn active" data-tab="image">Imagem</button>
-            <button class="tab-btn" data-tab="audio">Áudio</button>
-            <button class="tab-btn" data-tab="video">Vídeo</button>
-        </div>
-        <div class="pipeline-flow active" id="flow-image">
-            <div class="flow-step">Canvas Load</div><div class="flow-arrow">→</div>
-            <div class="flow-step highlight">Sobel Map</div><div class="flow-arrow">→</div>
-            <div class="flow-step highlight">PGD Iterativo</div><div class="flow-arrow">→</div>
-            <div class="flow-step">ε-Ball Proj.</div><div class="flow-arrow">→</div>
-            <div class="flow-step highlight">Export PNG</div>
-        </div>
-        <div class="pipeline-flow" id="flow-audio">
-            <div class="flow-step highlight">Pitch Shift</div><div class="flow-arrow">→</div>
-            <div class="flow-step highlight">Time Stretch</div><div class="flow-arrow">→</div>
-            <div class="flow-step highlight">Noise 300–3400Hz</div><div class="flow-arrow">→</div>
-            <div class="flow-step highlight">PGD/Whisper</div><div class="flow-arrow">→</div>
-            <div class="flow-step">Export WAV</div>
-        </div>
-        <div class="pipeline-flow" id="flow-video">
-            <div class="flow-step">Decode Frames</div><div class="flow-arrow">→</div>
-            <div class="flow-step highlight">Capa + Noise/frame</div><div class="flow-arrow">→</div>
-            <div class="flow-step highlight">Overlay + Extensão</div><div class="flow-arrow">→</div>
-            <div class="flow-step highlight">Re-encode H.264</div><div class="flow-arrow">→</div>
-            <div class="flow-step">MP4 pronto</div>
-        </div>
+    <!-- Pipeline tabs (hidden) -->
+    <div style="display:none">
+        <div id="flow-image"></div>
+        <div id="flow-audio"></div>
+        <div id="flow-video"></div>
     </div>
 
     <!-- Stats -->
@@ -340,6 +317,28 @@
         <span id="vl-iter">20</span>
         <input type="range" id="sl-pitch" min="1" max="6" value="2" step=".5">
         <span id="vl-pitch">+2 st</span>
+    </div>
+
+    <!-- Asset Library (sempre aberto, acima do nível) -->
+    <div class="asset-library" id="asset-library">
+        <div class="asset-library-header">
+            <div class="asset-library-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                Banco de Assets
+                <span class="asset-badge" id="lib-badge">0 itens</span>
+            </div>
+        </div>
+        <div class="asset-library-body open" id="lib-body">
+            <div>
+                <div class="asset-section-title">🖼 Capas / Thumbnails</div>
+                <div class="asset-list" id="al-cover"></div>
+                <button class="asset-upload-btn" id="btn-add-cover-asset">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    Adicionar capa ao banco
+                </button>
+                <input type="file" id="inp-cover-asset" hidden accept="image/*">
+            </div>
+        </div>
     </div>
 
     <!-- Level Selector -->
@@ -377,29 +376,6 @@
                 </label>
                 Modo TikTok
             </label>
-        </div>
-    </div>
-
-    <!-- Asset Library -->
-    <div class="asset-library" id="asset-library">
-        <div class="asset-library-header" id="lib-toggle">
-            <div class="asset-library-title">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
-                Banco de Assets
-                <span class="asset-badge" id="lib-badge">0 itens</span>
-            </div>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="lib-chevron"><polyline points="6 9 12 15 18 9"/></svg>
-        </div>
-        <div class="asset-library-body" id="lib-body">
-            <div>
-                <div class="asset-section-title">🖼 Capas / Thumbnails</div>
-                <div class="asset-list" id="al-cover"></div>
-                <button class="asset-upload-btn" id="btn-add-cover-asset">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                    Adicionar capa ao banco
-                </button>
-                <input type="file" id="inp-cover-asset" hidden accept="image/*">
-            </div>
         </div>
     </div>
 
@@ -455,7 +431,7 @@
                         <option value="en-US">EN-US</option>
                         <option value="es-ES">ES</option>
                     </select>
-                    <input type="range" id="ws-mix-slider" min="-40" max="-15" value="-28" style="flex:1;accent-color:#E8CFA0">
+                    <input type="range" id="ws-mix-slider" min="-40" max="-15" value="-28" style="flex:1;accent-color:var(--accent)">
                     <span style="font-size:.75rem;font-weight:700;color:#E8CFA0;min-width:38px" id="ws-mix-val">-28dB</span>
                 </div>
                 <p class="ws-info">O texto é convertido em fala e injetado em bandas de frequência que STT (Whisper, Google ASR) prioriza — inaudível ao público por mascaramento psicoacústico.</p>

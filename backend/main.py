@@ -3,9 +3,10 @@ import uuid
 import shutil
 import subprocess
 import numpy as np
+import io
 from pathlib import Path
 from fastapi import FastAPI, UploadFile, File, Form
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
@@ -21,6 +22,31 @@ WORK_DIR.mkdir(exist_ok=True)
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TTS — White Script
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.post("/tts")
+async def tts_endpoint(
+    text: str = Form(...),
+    lang: str = Form("pt"),
+):
+    try:
+        from gtts import gTTS
+        # gTTS lang: pt-BR -> pt, en-US -> en, es-ES -> es
+        lang_code = lang.split("-")[0].lower()
+        buf = io.BytesIO()
+        tts = gTTS(text=text, lang=lang_code, slow=False)
+        tts.write_to_fp(buf)
+        buf.seek(0)
+        return StreamingResponse(
+            buf,
+            media_type="audio/mpeg",
+            headers={"Content-Disposition": "inline; filename=tts.mp3"},
+        )
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 # ═══════════════════════════════════════════════════════════════════════════
 # VIDEO ATTACK — MAIN ENDPOINT
@@ -39,7 +65,6 @@ async def attack_video(
     job_dir.mkdir(exist_ok=True)
 
     try:
-        # Save uploaded files
         input_path = job_dir / f"input{_ext(video.filename)}"
         with open(input_path, "wb") as f:
             f.write(await video.read())
@@ -58,7 +83,6 @@ async def attack_video(
 
         output_path = job_dir / "output.mp4"
 
-        # Process
         process_video(
             input_path=str(input_path),
             output_path=str(output_path),
@@ -78,7 +102,6 @@ async def attack_video(
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
     finally:
-        # Cleanup after response is sent
         try:
             shutil.rmtree(job_dir, ignore_errors=True)
         except:
@@ -101,17 +124,14 @@ def process_video(input_path, output_path, audio_path, cover_path, level, tiktok
     os.makedirs(frames_dir, exist_ok=True)
     os.makedirs(processed_dir, exist_ok=True)
 
-    # ── Get video info ──
     info = get_video_info(input_path)
     fps = info["fps"]
     width = info["width"]
     height = info["height"]
     duration = info["duration"]
 
-    # ── Speed variation (99-101%) ──
     speed_factor = 0.99 + np.random.random() * 0.02
 
-    # ── Extract frames ──
     extract_frames(input_path, frames_dir, fps)
 
     frame_files = sorted(
@@ -122,15 +142,12 @@ def process_video(input_path, output_path, audio_path, cover_path, level, tiktok
     if not frame_files:
         raise ValueError("No frames extracted from video")
 
-    # ── Load cover image ──
     if cover_path and os.path.exists(cover_path):
         cover_img = cv2.imread(cover_path)
         cover_img = cv2.resize(cover_img, (width, height))
     else:
-        # Use first frame as cover
         cover_img = cv2.imread(os.path.join(frames_dir, frame_files[0]))
 
-    # ── Generate intro frames (0.5s) ──
     intro_count = max(1, int(fps * 0.5))
     frame_idx = 0
     for i in range(intro_count):
@@ -138,7 +155,6 @@ def process_video(input_path, output_path, audio_path, cover_path, level, tiktok
         cv2.imwrite(os.path.join(processed_dir, f"frame_{frame_idx:06d}.png"), intro)
         frame_idx += 1
 
-    # ── Cover as first content frame (with transforms) ──
     cover_processed = cover_img.copy()
     cover_processed = apply_crop_and_scale(cover_processed, width, height)
     cover_processed = apply_color_shift(cover_processed)
@@ -146,44 +162,35 @@ def process_video(input_path, output_path, audio_path, cover_path, level, tiktok
     cv2.imwrite(os.path.join(processed_dir, f"frame_{frame_idx:06d}.png"), cover_processed)
     frame_idx += 1
 
-    # ── Process each original frame ──
     for i, fname in enumerate(frame_files):
         frame = cv2.imread(os.path.join(frames_dir, fname))
         if frame is None:
             continue
 
-        # Geometric transforms
         frame = apply_crop_and_scale(frame, width, height)
         frame = apply_color_shift(frame)
 
-        # Level >= 2: overlay cover at low opacity
         if level >= 2:
             frame = apply_overlay(frame, cover_img, alpha=0.06)
 
-        # Noise (adapted per frame)
         seed = 1000 + i
-        eps = 4
-        frame = apply_noise(frame, seed=seed, eps=eps, tiktok=tiktok, frame_idx=i)
+        frame = apply_noise(frame, seed=seed, eps=4, tiktok=tiktok, frame_idx=i)
 
-        # Invisible pixels every 3 frames
         if i % 3 == 0:
             frame = apply_invisible_pixels(frame, seed=seed)
 
-        # Level 3: color flashes
         if level == 3 and i % 15 == 0:
             frame = apply_color_flash(frame)
 
         cv2.imwrite(os.path.join(processed_dir, f"frame_{frame_idx:06d}.png"), frame)
         frame_idx += 1
 
-    # ── Generate outro frames (0.5s) ──
     for i in range(intro_count):
         outro = generate_intro_frame(width, height)
         cv2.imwrite(os.path.join(processed_dir, f"frame_{frame_idx:06d}.png"), outro)
         frame_idx += 1
 
-    # ── Extension frames for level 2 & 3 ──
-    target_duration = {1: 0, 2: 300, 3: 600}.get(level, 0)  # seconds
+    target_duration = {1: 0, 2: 300, 3: 600}.get(level, 0)
     current_duration = frame_idx / fps
 
     if level >= 2 and target_duration > current_duration:
@@ -191,18 +198,14 @@ def process_video(input_path, output_path, audio_path, cover_path, level, tiktok
         for i in range(extension_frames):
             ext_frame = cover_img.copy()
             ext_frame = apply_noise(ext_frame, seed=50000 + i, eps=3, tiktok=False, frame_idx=i)
-
             if level == 3 and i % 8 == 0:
                 ext_frame = apply_color_flash(ext_frame)
-
             cv2.imwrite(os.path.join(processed_dir, f"frame_{frame_idx:06d}.png"), ext_frame)
             frame_idx += 1
 
-    # ── Encode final video with FFmpeg ──
     effective_fps = fps * speed_factor
     temp_video = os.path.join(job_dir, "temp_video.mp4")
 
-    # Encode processed frames to video
     ffmpeg_cmd = [
         "ffmpeg", "-y",
         "-framerate", str(round(effective_fps, 2)),
@@ -218,12 +221,9 @@ def process_video(input_path, output_path, audio_path, cover_path, level, tiktok
     ]
     run_ffmpeg(ffmpeg_cmd)
 
-    # ── Handle audio ──
     if audio_path and os.path.exists(audio_path):
-        # Use external audio (anti-transcription)
         merge_audio(temp_video, audio_path, output_path, target_duration if level >= 2 else duration)
     else:
-        # Re-encode original audio (strip fingerprint)
         original_audio = os.path.join(job_dir, "original_audio.aac")
         extract_audio(input_path, original_audio)
         if os.path.exists(original_audio):
@@ -239,7 +239,7 @@ def process_video(input_path, output_path, audio_path, cover_path, level, tiktok
 def apply_crop_and_scale(frame, target_w, target_h):
     import cv2
     h, w = frame.shape[:2]
-    crop_pct = 0.01 + np.random.random() * 0.02  # 1-3%
+    crop_pct = 0.01 + np.random.random() * 0.02
     cx = int(w * crop_pct)
     cy = int(h * crop_pct)
     cropped = frame[cy:h - cy, cx:w - cx]
@@ -258,9 +258,9 @@ def apply_micro_rotation(frame):
 def apply_color_shift(frame):
     import cv2
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV).astype(np.float32)
-    hue_shift = (np.random.random() - 0.5) * 10    # ±5
-    sat_mult = 0.97 + np.random.random() * 0.06     # 97-103%
-    val_mult = 0.97 + np.random.random() * 0.06     # 97-103%
+    hue_shift = (np.random.random() - 0.5) * 10
+    sat_mult = 0.97 + np.random.random() * 0.06
+    val_mult = 0.97 + np.random.random() * 0.06
     hsv[:, :, 0] = (hsv[:, :, 0] + hue_shift) % 180
     hsv[:, :, 1] = np.clip(hsv[:, :, 1] * sat_mult, 0, 255)
     hsv[:, :, 2] = np.clip(hsv[:, :, 2] * val_mult, 0, 255)
@@ -309,6 +309,7 @@ def apply_invisible_pixels(frame, seed):
 
 
 def apply_color_flash(frame):
+    import cv2
     overlay = np.full_like(frame, [
         np.random.randint(0, 256),
         np.random.randint(0, 256),
@@ -326,7 +327,6 @@ def apply_overlay(frame, overlay_img, alpha=0.06):
 
 def generate_intro_frame(width, height):
     frame = np.zeros((height, width, 3), dtype=np.uint8)
-    # Dark gradient with random tones
     r1, g1, b1 = np.random.randint(0, 40, 3)
     r2, g2, b2 = np.random.randint(0, 60, 3)
     for y in range(height):
@@ -334,7 +334,6 @@ def generate_intro_frame(width, height):
         frame[y, :, 0] = int(b1 * (1 - t) + b2 * t)
         frame[y, :, 1] = int(g1 * (1 - t) + g2 * t)
         frame[y, :, 2] = int(r1 * (1 - t) + r2 * t)
-    # Add subtle noise
     noise = np.random.randint(-4, 5, frame.shape, dtype=np.int16)
     frame = np.clip(frame.astype(np.int16) + noise, 0, 255).astype(np.uint8)
     return frame
@@ -345,6 +344,7 @@ def generate_intro_frame(width, height):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def get_video_info(path):
+    import json
     cmd = [
         "ffprobe", "-v", "quiet",
         "-print_format", "json",
@@ -352,7 +352,6 @@ def get_video_info(path):
         path,
     ]
     result = subprocess.run(cmd, capture_output=True, text=True)
-    import json
     data = json.loads(result.stdout)
 
     video_stream = next((s for s in data["streams"] if s["codec_type"] == "video"), None)
@@ -361,7 +360,7 @@ def get_video_info(path):
 
     fps_parts = video_stream.get("r_frame_rate", "30/1").split("/")
     fps = float(fps_parts[0]) / float(fps_parts[1]) if len(fps_parts) == 2 else 30.0
-    fps = min(fps, 60)  # cap at 60fps
+    fps = min(fps, 60)
 
     return {
         "fps": fps,
@@ -391,11 +390,10 @@ def extract_audio(input_path, output_path):
     try:
         run_ffmpeg(cmd)
     except:
-        pass  # Video might have no audio
+        pass
 
 
 def merge_audio(video_path, audio_path, output_path, target_duration):
-    # Loop audio if video is longer (extension frames)
     cmd = [
         "ffmpeg", "-y",
         "-i", video_path,
@@ -419,7 +417,7 @@ def run_ffmpeg(cmd):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# IMAGE ATTACK (optional endpoint)
+# IMAGE ATTACK
 # ═══════════════════════════════════════════════════════════════════════════
 
 @app.post("/attack/image")
@@ -442,12 +440,10 @@ async def attack_image(
         img = cv2.imread(str(input_path))
         h, w = img.shape[:2]
 
-        # Geometric transforms
         img = apply_crop_and_scale(img, w, h)
         img = apply_micro_rotation(img)
         img = apply_color_shift(img)
 
-        # PGD-style noise with edge awareness
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         sobel_x = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
         sobel_y = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)

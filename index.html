@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MetaClean — Camuflagem Adversarial</title>
+    <title>MetaClean</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -24,9 +24,9 @@
 
         /* Header */
         header{position:sticky;top:0;z-index:100;background:rgba(5,5,8,.9);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);padding:.875rem 2rem;display:flex;justify-content:space-between;align-items:center}
-        .logo{display:flex;align-items:center;gap:.75rem;font-weight:800;font-size:1.2rem}
+        .logo{display:flex;align-items:center;gap:.75rem;font-weight:300;font-size:1.2rem;letter-spacing:.01em}
         .logo svg{color:var(--accent);width:26px;height:26px}
-        .logo span span{color:var(--purple)}
+        .logo span span{color:var(--purple);font-weight:300}
         .header-right{display:flex;align-items:center;gap:1rem}
         .status-pill{display:flex;align-items:center;gap:.4rem;padding:.3rem .8rem;border-radius:99px;font-size:.75rem;font-weight:600;border:1px solid var(--border);background:var(--surface)}
         .status-dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
@@ -290,8 +290,8 @@
 
 <main>
     <section class="hero">
-        <h1>Camuflagem Adversarial</h1>
-        <p>Perturbações reais contra Whisper e ResNet50. Processamento via backend Python com PGD, steganografia LSB e injeção de frames.</p>
+        <h1>MetaClean</h1>
+        <p>Rejeição virou coisa do passado.</p>
     </section>
 
     <!-- Pipeline tabs -->
@@ -332,32 +332,14 @@
         <div class="stat-card"><span class="label">ε Médio</span><span class="value" id="st-eps">—</span></div>
     </div>
 
-    <!-- Config -->
-    <div class="config-panel">
-        <div class="config-group">
-            <label>ε Epsilon (imagem)</label>
-            <div class="config-row">
-                <input type="range" id="sl-eps" min="1" max="8" value="4">
-                <span class="config-val" id="vl-eps">4</span>
-            </div>
-            <p class="config-desc">Variação máx por pixel. ≤4 = imperceptível.</p>
-        </div>
-        <div class="config-group">
-            <label>Iterações PGD</label>
-            <div class="config-row">
-                <input type="range" id="sl-iter" min="5" max="40" value="20" step="5">
-                <span class="config-val" id="vl-iter">20</span>
-            </div>
-            <p class="config-desc">Mais = mais eficaz, mais lento.</p>
-        </div>
-        <div class="config-group">
-            <label>Pitch Shift (áudio)</label>
-            <div class="config-row">
-                <input type="range" id="sl-pitch" min="1" max="6" value="2" step=".5">
-                <span class="config-val" id="vl-pitch">+2 st</span>
-            </div>
-            <p class="config-desc">Semitons. Sobrevive à recompressão.</p>
-        </div>
+    <!-- Config (hidden — valores padrão fixos) -->
+    <div style="display:none">
+        <input type="range" id="sl-eps" min="1" max="8" value="4">
+        <span id="vl-eps">4</span>
+        <input type="range" id="sl-iter" min="5" max="40" value="20" step="5">
+        <span id="vl-iter">20</span>
+        <input type="range" id="sl-pitch" min="1" max="6" value="2" step=".5">
+        <span id="vl-pitch">+2 st</span>
     </div>
 
     <!-- Level Selector -->

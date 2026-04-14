@@ -1241,7 +1241,7 @@
         // Backend Monitoring
         async function checkBackend() {
             try {
-                const res = await fetch('http://34.39.252.153:8000/health');
+                const res = await fetch('https://34.39.252.153:8000/health');
                 if (res.ok) {
                     backendOnline = true;
                     updateBackendUI(true);
@@ -1533,7 +1533,7 @@
             setProgress(10);
             showLog('Enviando para o Google Cloud...');
 
-            const response = await fetch('http://34.39.252.153:8000/attack/video', {
+            const response = await fetch('https://34.39.252.153:8000/attack/video', {
                 method: 'POST',
                 body: formData,
             });

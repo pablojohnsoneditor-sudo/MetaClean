@@ -513,49 +513,21 @@ setInterval(checkBackend, 10000);
 // ═══════════════════════════════════════════════════════════════════════════
 // INDEXEDDB — Banco de Assets
 // ═══════════════════════════════════════════════════════════════════════════
-let db;
-const DB_NAME = 'metaclean_assets', DB_VER = 1;
+// IN-MEMORY ASSET STORE (substitui IndexedDB — funciona em qualquer ambiente)
+// ═══════════════════════════════════════════════════════════════════════════
+const memStore = { cover: [], audio: [] };
+let memNextId = 1;
 
-function openDB() {
-    return new Promise((res, rej) => {
-        const req = indexedDB.open(DB_NAME, DB_VER);
-        req.onupgradeneeded = e => {
-            const d = e.target.result;
-            if (!d.objectStoreNames.contains('audio'))
-                d.createObjectStore('audio', { keyPath: 'id', autoIncrement: true });
-            if (!d.objectStoreNames.contains('cover'))
-                d.createObjectStore('cover', { keyPath: 'id', autoIncrement: true });
-        };
-        req.onsuccess = e => res(e.target.result);
-        req.onerror   = e => rej(e.target.error);
-    });
-}
-
-async function dbGetAll(store) {
-    return new Promise((res, rej) => {
-        const tx  = db.transaction(store, 'readonly');
-        const req = tx.objectStore(store).getAll();
-        req.onsuccess = e => res(e.target.result);
-        req.onerror   = e => rej(e.target.error);
-    });
-}
+async function dbGetAll(store) { return [...memStore[store]]; }
 
 async function dbAdd(store, obj) {
-    return new Promise((res, rej) => {
-        const tx  = db.transaction(store, 'readwrite');
-        const req = tx.objectStore(store).add(obj);
-        req.onsuccess = e => res(e.target.result);
-        req.onerror   = e => rej(e.target.error);
-    });
+    obj.id = memNextId++;
+    memStore[store].push(obj);
+    return obj.id;
 }
 
 async function dbDelete(store, id) {
-    return new Promise((res, rej) => {
-        const tx  = db.transaction(store, 'readwrite');
-        const req = tx.objectStore(store).delete(id);
-        req.onsuccess = () => res();
-        req.onerror   = e => rej(e.target.error);
-    });
+    memStore[store] = memStore[store].filter(o => o.id !== id);
 }
 
 let selectedCoverAsset = null;
@@ -617,15 +589,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     });
 });
 
-// ═══════════════════════════════════════════════════════════════════════════
-// LIBRARY TOGGLE
-// ═══════════════════════════════════════════════════════════════════════════
-document.getElementById('lib-toggle').addEventListener('click', () => {
-    const body = document.getElementById('lib-body');
-    const chev = document.getElementById('lib-chevron');
-    const open = body.classList.toggle('open');
-    chev.style.transform = open ? 'rotate(180deg)' : '';
-});
+// Banco sempre aberto — sem toggle
 
 document.getElementById('btn-add-cover-asset').onclick = () => document.getElementById('inp-cover-asset').click();
 
@@ -1880,10 +1844,7 @@ async function processVideoLocal(obj, level) {
 // ═══════════════════════════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════════════════════════
-(async () => {
-    db = await openDB();
-    await renderAssetLibrary();
-})();
+renderAssetLibrary();
 </script>
 </body>
 </html>

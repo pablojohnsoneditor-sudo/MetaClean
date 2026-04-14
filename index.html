@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/jszip/dist/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.2.2/build/mp4-muxer.min.js"></script>
     <style>
         :root {
             --bg: #050508; --surface: #0f0f17; --card: #161621;
@@ -351,14 +352,6 @@
             </div>
         </div>
         <div class="toggle-row">
-            <label class="toggle-item">
-                <label class="toggle-switch">
-                    <input type="checkbox" id="tgl-local">
-                    <span class="toggle-track"></span>
-                    <span class="toggle-knob"></span>
-                </label>
-                Processar localmente (ignorar backend)
-            </label>
             <label class="toggle-item">
                 <label class="toggle-switch">
                     <input type="checkbox" id="tgl-tiktok">
@@ -748,9 +741,7 @@ function buildStepHTML(type) {
     const steps = {
         image: ['Canvas Load', 'Sobel Edge Map', 'PGD Iterativo', 'ε-Ball Projection', 'Export PNG'],
         audio: ['Pitch Shift', 'Time Stretch', 'Ruído 300–3400 Hz', 'Ataque PGD/Whisper', 'Export WAV'],
-        video: (document.getElementById('tgl-local')?.checked || !backendOnline)
-            ? ['Decode + Capa', 'Noise frame-a-frame', 'Extensão de duração', 'Re-encode vídeo', 'Finalizado']
-            : ['Enviando para o backend', 'Inject Frames (OpenCV)', 'Steganografia LSB (áudio)', 'Remux FFmpeg (MP4)', 'Download pronto'],
+        video: ['Decode + Capa', 'Noise frame-a-frame', 'Extensão de duração', 'Encode MP4 (H.264)', 'Finalizado'],
     }[type] || ['Processar', 'Exportar'];
     return steps.map(s => `
         <div class="log-step">
@@ -832,14 +823,7 @@ async function processFile(obj) {
         let result;
         if      (obj.type === 'image') result = await processImage(obj, eps, iter);
         else if (obj.type === 'audio') result = await processAudio(obj, pitch, iter);
-        else {
-            const forceLocal = document.getElementById('tgl-local').checked;
-            if (backendOnline && !forceLocal) {
-                result = await processVideo(obj);
-            } else {
-                result = await processVideoLocal(obj, selectedLevel);
-            }
-        }
+        else                           result = await processVideoLocal(obj, selectedLevel);
 
         obj.status = 'done';
         obj.result = result;
@@ -1559,69 +1543,139 @@ async function processVideoLocal(obj, level) {
 
     setStep(obj.id, 2, 'done');
 
-    // Step 3 — Encode to MP4 via MediaRecorder
+    // Step 3 — Encode MP4 com WebCodecs + mp4-muxer (sync exato A/V)
     setStep(obj.id, 3, 'active');
 
-    const outCanvas = document.createElement('canvas');
-    outCanvas.width = w; outCanvas.height = h;
-    const outCtx = outCanvas.getContext('2d');
-
-    const stream = outCanvas.captureStream(FPS);
-
-    // Add audio track if available
-    let audioBlob = null;
-    if (obj.extraAudio || obj.file.type.startsWith('video')) {
-        try {
-            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            const audioSource = obj.extraAudio || obj.file;
-            const arrayBuf = await audioSource.arrayBuffer();
-            const audioBuf = await audioCtx.decodeAudioData(arrayBuf);
-
-            const dest = audioCtx.createMediaStreamDestination();
-            const source = audioCtx.createBufferSource();
-            source.buffer = audioBuf;
-            source.connect(dest);
-            source.start();
-
-            stream.addTrack(dest.stream.getAudioTracks()[0]);
-        } catch (e) {
-            console.warn('[Audio track]', e.message);
-        }
+    if (typeof VideoEncoder === 'undefined' || typeof Mp4Muxer === 'undefined') {
+        throw new Error('Navegador sem suporte a WebCodecs/MP4. Use Chrome/Edge atualizado.');
     }
 
-    const chunks = [];
-    const recorder = new MediaRecorder(stream, {
-        mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' :
-                  MediaRecorder.isTypeSupported('video/webm;codecs=vp8') ? 'video/webm;codecs=vp8' :
-                  'video/webm',
-        videoBitsPerSecond: 4000000
+    // Decodificar áudio
+    let audioBuf = null;
+    try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const audioSource = obj.extraAudio || obj.file;
+        const arrayBuf = await audioSource.arrayBuffer();
+        audioBuf = await audioCtx.decodeAudioData(arrayBuf);
+    } catch (e) {
+        console.warn('[Áudio não decodificado]', e.message);
+    }
+
+    // Setup muxer MP4
+    const muxer = new Mp4Muxer.Muxer({
+        target: new Mp4Muxer.ArrayBufferTarget(),
+        video: { codec: 'avc', width: w, height: h },
+        audio: audioBuf ? {
+            codec: 'aac',
+            numberOfChannels: audioBuf.numberOfChannels,
+            sampleRate: audioBuf.sampleRate,
+        } : undefined,
+        fastStart: 'in-memory',
     });
-    recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
 
-    const recDone = new Promise(r => { recorder.onstop = r; });
-    recorder.start();
+    // Video encoder
+    const videoEncoder = new VideoEncoder({
+        output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+        error: (e) => console.error('[VideoEncoder]', e),
+    });
 
-    // Draw each frame at the correct timing
+    // Config do codec (H.264 baseline para máxima compatibilidade)
+    const codecOptions = [
+        'avc1.42E01F', 'avc1.42001F', 'avc1.4D401F', 'avc1.640028'
+    ];
+    let configured = false;
+    for (const codec of codecOptions) {
+        try {
+            const support = await VideoEncoder.isConfigSupported({
+                codec, width: w, height: h, bitrate: 5_000_000, framerate: FPS,
+            });
+            if (support.supported) {
+                videoEncoder.configure(support.config);
+                configured = true;
+                break;
+            }
+        } catch (e) {}
+    }
+    if (!configured) throw new Error('Nenhum codec H.264 suportado.');
+
+    // Encode de cada frame com timestamp exato
     const encodeStart = Date.now();
+    const frameDurationUs = 1_000_000 / FPS;
     for (let i = 0; i < frameBlobs.length; i++) {
         const img = await createImageBitmap(frameBlobs[i]);
-        outCtx.drawImage(img, 0, 0, w, h);
+        const frame = new VideoFrame(img, {
+            timestamp: Math.round(i * frameDurationUs),
+            duration: Math.round(frameDurationUs),
+        });
+        videoEncoder.encode(frame, { keyFrame: i % 60 === 0 });
+        frame.close();
         img.close();
 
-        updateFrameCounter(i + 1, frameBlobs.length, `Re-encode: frame ${i + 1}/${frameBlobs.length}...`, encodeStart);
+        updateFrameCounter(i + 1, frameBlobs.length, `Encode: frame ${i + 1}/${frameBlobs.length}...`, encodeStart);
 
-        await new Promise(r => setTimeout(r, 1000 / FPS));
+        if (i % 5 === 0) await tick();
+    }
+    await videoEncoder.flush();
+    videoEncoder.close();
+
+    // Encode áudio
+    if (audioBuf) {
+        const audioEncoder = new AudioEncoder({
+            output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
+            error: (e) => console.error('[AudioEncoder]', e),
+        });
+        audioEncoder.configure({
+            codec: 'mp4a.40.2',
+            sampleRate: audioBuf.sampleRate,
+            numberOfChannels: audioBuf.numberOfChannels,
+            bitrate: 128_000,
+        });
+
+        // Duração total do vídeo final em segundos
+        const videoDurationSec = frameBlobs.length / FPS;
+        const totalSamplesNeeded = Math.ceil(videoDurationSec * audioBuf.sampleRate);
+        const sourceLength = audioBuf.length;
+        const channels = audioBuf.numberOfChannels;
+
+        // Loop do áudio para cobrir a duração completa (extensão)
+        const chunkSizeSamples = 1024;
+        let outputOffset = 0;
+
+        while (outputOffset < totalSamplesNeeded) {
+            const remaining = totalSamplesNeeded - outputOffset;
+            const chunkSize = Math.min(chunkSizeSamples, remaining);
+            const data = new Float32Array(chunkSize * channels);
+
+            for (let i = 0; i < chunkSize; i++) {
+                const srcIdx = (outputOffset + i) % sourceLength;
+                for (let ch = 0; ch < channels; ch++) {
+                    data[ch * chunkSize + i] = audioBuf.getChannelData(ch)[srcIdx];
+                }
+            }
+
+            const audioData = new AudioData({
+                format: 'f32-planar',
+                sampleRate: audioBuf.sampleRate,
+                numberOfFrames: chunkSize,
+                numberOfChannels: channels,
+                timestamp: Math.round((outputOffset / audioBuf.sampleRate) * 1_000_000),
+                data: data,
+            });
+            audioEncoder.encode(audioData);
+            audioData.close();
+            outputOffset += chunkSize;
+        }
+        await audioEncoder.flush();
+        audioEncoder.close();
     }
 
-    recorder.stop();
-    await recDone;
-
+    muxer.finalize();
     setStep(obj.id, 3, 'done');
 
     // Step 4 — Final
     setStep(obj.id, 4, 'active');
-    const finalBlob = new Blob(chunks, { type: recorder.mimeType });
-    const ext = recorder.mimeType.includes('mp4') ? 'mp4' : 'webm';
+    const finalBlob = new Blob([muxer.target.buffer], { type: 'video/mp4' });
+    const ext = 'mp4';
     setStep(obj.id, 4, 'done');
 
     return {

@@ -108,10 +108,12 @@ async def process_audio_ws(
 
 def inject_white_script_stft(original: np.ndarray, tts: np.ndarray, sr: int, mix_db: float) -> np.ndarray:
     """
-    Substituição espectral na banda de voz (300–3400 Hz) usando STFT.
-    Durante silêncios: TTS é o sinal dominante (alta alpha).
-    Durante fala:     TTS é injetado em baixo volume (baixa alpha).
-    Resultado: STT transcreve o White Script; humanos ouvem o original.
+    Substituição espectral máxima na banda de voz (300–3400 Hz).
+    Estratégia: substituir quase completamente o original pelo TTS nessa banda,
+    preservando graves (<300 Hz) e agudos (>3400 Hz) para manter naturalidade.
+    Silêncios: substituição total (alpha=1.0).
+    Fala ativa: substituição alta (alpha=0.92) — STT lê TTS, humano ouve mix.
+    TTS é normalizado para igualar o RMS do original na banda de voz.
     """
     import scipy.signal
 
@@ -125,55 +127,60 @@ def inject_white_script_stft(original: np.ndarray, tts: np.ndarray, sr: int, mix
     else:
         channels = [orig_f]
 
-    # Loop TTS para cobrir duração do original
+    # Loop TTS para cobrir toda a duração
     n = len(channels[0])
     if len(tts_f) < n:
         reps = int(np.ceil(n / len(tts_f)))
         tts_f = np.tile(tts_f, reps)
     tts_f = tts_f[:n]
 
-    # STFT params
-    nperseg   = 2048
-    freq_res  = sr / nperseg           # Hz por bin
-    low_bin   = int(300  / freq_res)   # ~300 Hz
-    high_bin  = int(3400 / freq_res)   # ~3400 Hz
+    # STFT params — janela menor para melhor resolução temporal
+    nperseg  = 1024
+    noverlap = nperseg * 3 // 4   # 75% overlap para melhor reconstrução
+    freq_res = sr / nperseg
+    low_bin  = max(1, int(300  / freq_res))
+    high_bin = min(nperseg // 2, int(3400 / freq_res))
 
-    # Mix base (linear)
-    base_mix  = 10 ** (mix_db / 20)
-
-    # STFT do TTS (mono) — usada em todos os canais
-    _, _, tts_stft = scipy.signal.stft(tts_f, fs=sr, nperseg=nperseg,
-                                        noverlap=nperseg // 2)
+    # STFT do TTS
+    _, _, tts_stft = scipy.signal.stft(tts_f, fs=sr, nperseg=nperseg, noverlap=noverlap)
 
     output_channels = []
     for ch in channels:
-        f, t, orig_stft = scipy.signal.stft(ch, fs=sr, nperseg=nperseg,
-                                             noverlap=nperseg // 2)
+        _, _, orig_stft = scipy.signal.stft(ch, fs=sr, nperseg=nperseg, noverlap=noverlap)
 
-        # RMS por frame para detectar silêncios
-        frame_rms = np.sqrt(np.mean(np.abs(orig_stft) ** 2, axis=0))
-        silence_thr = np.percentile(frame_rms, 35)  # 35% mais baixos = silêncio
+        # RMS por frame na banda de voz (para normalização e detecção de silêncio)
+        orig_band_rms = np.sqrt(np.mean(np.abs(orig_stft[low_bin:high_bin, :]) ** 2, axis=0) + 1e-10)
+        tts_band_rms  = np.sqrt(np.mean(np.abs(tts_stft[low_bin:high_bin, :]) ** 2, axis=0) + 1e-10)
+
+        # Threshold de silêncio: 40% mais baixos = silêncio
+        silence_thr = np.percentile(orig_band_rms, 40)
 
         out_stft = orig_stft.copy()
         n_frames = orig_stft.shape[1]
 
         for i in range(n_frames):
-            is_silence = frame_rms[i] <= silence_thr
-            # Silence: TTS como sinal dominante na banda de voz
-            # Speech:  TTS bem abaixo do original
-            alpha = min(base_mix * 4.0, 0.75) if is_silence else base_mix * 0.25
+            ti = i % tts_stft.shape[1]
+            tts_frame = tts_stft[:, ti].copy()
 
-            ti = i if i < tts_stft.shape[1] else i % tts_stft.shape[1]
-            tts_frame = tts_stft[:, ti]
+            # Normalizar TTS para igualar RMS do original na banda de voz
+            norm_factor = orig_band_rms[i] / (tts_band_rms[ti] + 1e-10)
+            norm_factor = np.clip(norm_factor, 0.1, 10.0)
+            tts_frame_norm = tts_frame * norm_factor
 
-            # Substituição espectral apenas na banda 300–3400 Hz
+            is_silence = orig_band_rms[i] <= silence_thr
+
+            # Durante silêncio: substituição total do TTS
+            # Durante fala: substituição 92% — STT praticamente só lê TTS
+            alpha = 1.0 if is_silence else 0.92
+
+            # Substituição na banda de voz (300–3400 Hz)
             out_stft[low_bin:high_bin, i] = (
                 orig_stft[low_bin:high_bin, i] * (1.0 - alpha) +
-                tts_frame[low_bin:high_bin]    * alpha
+                tts_frame_norm[low_bin:high_bin] * alpha
             )
+            # Fora da banda: preservar original intacto (naturalidade)
 
-        _, out_ch = scipy.signal.istft(out_stft, fs=sr, nperseg=nperseg,
-                                        noverlap=nperseg // 2)
+        _, out_ch = scipy.signal.istft(out_stft, fs=sr, nperseg=nperseg, noverlap=noverlap)
         out_ch = np.clip(out_ch[:n], -1.0, 1.0)
         output_channels.append(out_ch)
 

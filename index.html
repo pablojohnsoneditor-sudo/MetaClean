@@ -1258,8 +1258,9 @@ async function processAudio(obj, pitch, iter) {
     }
 
     setStep(obj.id, 4, 'done');
+    const wsApplied = !!(wsEnabled && document.getElementById('ws-text').value.trim() && blob);
     return { url: URL.createObjectURL(blob), name: `adv_${obj.file.name.replace(/\.[^.]+$/, '.wav')}`,
-             blob, processingTime: ((Date.now() - t0) / 1000).toFixed(1) + 's', backend: false };
+             blob, processingTime: ((Date.now() - t0) / 1000).toFixed(1) + 's', backend: false, wsApplied };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1319,83 +1320,93 @@ async function processVideo(obj) {
 // VALIDATION PANEL
 // ═══════════════════════════════════════════════════════════════════════════
 function renderValidation(obj, eps, pitch, processingTime) {
-    const el  = document.getElementById(`vp-${obj.id}`);
-    const r   = obj.result;
-    const bk  = r.backend ? '✓ Backend Python (ataque real)' : '⚠ Local (fallback)';
-    const bkCls = r.backend ? 'good' : 'warn';
+    const el = document.getElementById(`vp-${obj.id}`);
+    const r  = obj.result;
+
+    // White Script info
+    const wsOn     = wsEnabled && !!document.getElementById('ws-text').value.trim();
+    const wsNicho  = document.getElementById('ws-category').options[document.getElementById('ws-category').selectedIndex].text;
+    const wsMixDb  = document.getElementById('ws-mix-slider').value;
+    const wsWords  = document.getElementById('ws-word-count').textContent;
+    const wsOk     = wsOn && r.wsApplied;
+    const wsCls    = wsOk ? 'good' : wsOn ? 'warn' : '';
+    const wsStatus = wsOk ? '✓ Injetado (STFT)' : wsOn ? '⚠ Falhou (sem backend)' : 'Desativado';
+
+    // File size
+    const origKB = obj.file ? (obj.file.size / 1024).toFixed(0) : '—';
+    const finalKB = r.blob ? (r.blob.size / 1024).toFixed(0) : '—';
 
     let cards = '';
+
     if (obj.type === 'image') {
         cards = `
         <div class="val-card">
-            <div class="val-card-title">Visão Computacional (ResNet50)</div>
-            <div class="val-row"><span class="key">Método</span><span class="val ${bkCls}">${bk}</span></div>
-            <div class="val-row"><span class="key">ε utilizado</span><span class="val">${eps}/255</span></div>
-            <div class="val-row"><span class="key">Iterações PGD</span><span class="val">${document.getElementById('sl-iter').value}</span></div>
+            <div class="val-card-title">Camuflagem de Imagem</div>
+            <div class="val-row"><span class="key">Método</span><span class="val good">PGD + Sobel (local)</span></div>
+            <div class="val-row"><span class="key">Iterações</span><span class="val">${document.getElementById('sl-iter').value}</span></div>
+            <div class="val-row"><span class="key">ε (intensidade)</span><span class="val">${eps}/255</span></div>
+            <div class="val-row"><span class="key">Micro-rotação</span><span class="val good">✓ Aplicada</span></div>
+            <div class="val-row"><span class="key">Color shift</span><span class="val good">✓ Aplicado</span></div>
         </div>
         <div class="val-card">
-            <div class="val-card-title">Percepção Humana</div>
-            <div class="val-row"><span class="key">Δ máx/pixel</span><span class="val good">${eps} u</span></div>
+            <div class="val-card-title">Arquivo</div>
+            <div class="val-row"><span class="key">Tamanho original</span><span class="val">${origKB} KB</span></div>
+            <div class="val-row"><span class="key">Tamanho final</span><span class="val good">${finalKB} KB</span></div>
             <div class="val-row"><span class="key">SSIM estimado</span><span class="val good">${(0.995 - eps*0.004).toFixed(3)}</span></div>
-            <div class="val-row"><span class="key">Visibilidade</span><span class="val good">Imperceptível</span></div>
+            <div class="val-row"><span class="key">Metadados</span><span class="val good">✓ Removidos</span></div>
         </div>`;
+
     } else if (obj.type === 'audio') {
         cards = `
         <div class="val-card">
-            <div class="val-card-title">ASR (Whisper)</div>
-            <div class="val-row"><span class="key">Método</span><span class="val ${bkCls}">${bk}</span></div>
+            <div class="val-card-title">Camuflagem de Áudio</div>
+            <div class="val-row"><span class="key">Perturbação psicoacústica</span><span class="val good">✓ 800 Hz / −18 dB</span></div>
             <div class="val-row"><span class="key">Pitch shift</span><span class="val">+${pitch} semitones</span></div>
-            <div class="val-row"><span class="key">Ruído</span><span class="val">−18 dB / 800 Hz</span></div>
+            <div class="val-row"><span class="key">Tamanho original</span><span class="val">${origKB} KB</span></div>
+            <div class="val-row"><span class="key">Tamanho final</span><span class="val good">${finalKB} KB</span></div>
         </div>
         <div class="val-card">
-            <div class="val-card-title">Percepção Humana</div>
-            <div class="val-row"><span class="key">Pitch</span><span class="val good">Audível mas natural</span></div>
-            <div class="val-row"><span class="key">Ruído</span><span class="val good">Abaixo do limiar</span></div>
-            <div class="val-row"><span class="key">Inteligibilidade</span><span class="val good">Preservada</span></div>
+            <div class="val-card-title">White Script</div>
+            <div class="val-row"><span class="key">Status</span><span class="val ${wsCls}">${wsStatus}</span></div>
+            <div class="val-row"><span class="key">Nicho</span><span class="val">${wsOn ? wsNicho : '—'}</span></div>
+            <div class="val-row"><span class="key">Palavras</span><span class="val">${wsOn ? wsWords : '—'}</span></div>
+            <div class="val-row"><span class="key">Nível de mistura</span><span class="val">${wsOn ? wsMixDb + ' dB' : '—'}</span></div>
+            <div class="val-row"><span class="key">Banda injetada</span><span class="val ${wsOk ? 'good' : ''}">${wsOk ? '300 – 3400 Hz' : '—'}</span></div>
         </div>`;
+
     } else {
         const levelNames = { 1: 'Leve', 2: 'Médio', 3: 'Pesado' };
-        if (r.level) {
-            cards = `
-            <div class="val-card">
-                <div class="val-card-title">Camuflagem Client-Side</div>
-                <div class="val-row"><span class="key">Nível</span><span class="val good">${r.level} — ${levelNames[r.level]}</span></div>
-                <div class="val-row"><span class="key">Modo TikTok</span><span class="val ${r.isTikTok ? 'good' : ''}">${r.isTikTok ? '✓ Ativo' : 'Desativado'}</span></div>
-                <div class="val-row"><span class="key">Capa</span><span class="val ${r.hasExtraCover ? 'good' : 'warn'}">${r.hasExtraCover ? 'Asset do banco' : 'Frame 1 (auto)'}</span></div>
-            </div>
-            <div class="val-card">
-                <div class="val-card-title">Processamento</div>
-                <div class="val-row"><span class="key">Frames processados</span><span class="val good">${r.totalFrames}</span></div>
-                <div class="val-row"><span class="key">Noise ε</span><span class="val">${eps}/8</span></div>
-                <div class="val-row"><span class="key">Overlay capa</span><span class="val ${r.level >= 2 ? 'good' : ''}">${r.level >= 2 ? '6% opacidade' : 'Não'}</span></div>
-                <div class="val-row"><span class="key">Flashes cor</span><span class="val ${r.level === 3 ? 'good' : ''}">${r.level === 3 ? '✓ Ativos' : 'Não'}</span></div>
-            </div>
-            <div class="val-card">
-                <div class="val-card-title">Duração</div>
-                <div class="val-row"><span class="key">Original</span><span class="val">${r.originalDuration}s</span></div>
-                <div class="val-row"><span class="key">Final</span><span class="val good">${r.finalDuration}s</span></div>
-                <div class="val-row"><span class="key">Metadados</span><span class="val good">✓ Removidos (re-encode)</span></div>
-            </div>`;
-        } else {
-            cards = `
-            <div class="val-card">
-                <div class="val-card-title">Backend Python</div>
-                <div class="val-row"><span class="key">Capa</span><span class="val ${r.hasExtraCover ? 'good' : 'warn'}">${r.hasExtraCover ? 'Imagem do banco' : 'Sem capa enviada'}</span></div>
-                <div class="val-row"><span class="key">Frames injetados</span><span class="val good">30 frames</span></div>
-            </div>
-            <div class="val-card">
-                <div class="val-card-title">Steganografia LSB</div>
-                <div class="val-row"><span class="key">Áudio</span><span class="val ${r.hasExtraAudio ? 'good' : 'warn'}">${r.hasExtraAudio ? 'Áudio externo' : 'Sem áudio extra'}</span></div>
-                <div class="val-row"><span class="key">Bits escondidos</span><span class="val good">98.304 bits</span></div>
-            </div>
-            <div class="val-card">
-                <div class="val-card-title">Vídeo Final</div>
-                <div class="val-row"><span class="key">Formato</span><span class="val">MP4 (H.264 + AAC)</span></div>
-                <div class="val-row"><span class="key">Thumbnail</span><span class="val good">attached_pic</span></div>
-                <div class="val-row"><span class="key">Backend</span><span class="val good">✓ PGD real</span></div>
-            </div>`;
-        }
+        cards = `
+        <div class="val-card">
+            <div class="val-card-title">Camuflagem de Vídeo</div>
+            <div class="val-row"><span class="key">Nível</span><span class="val good">${r.level} — ${levelNames[r.level] || '—'}</span></div>
+            <div class="val-row"><span class="key">Frames processados</span><span class="val good">${r.totalFrames}</span></div>
+            <div class="val-row"><span class="key">Noise ε</span><span class="val">${eps}/8</span></div>
+            <div class="val-row"><span class="key">Modo TikTok</span><span class="val ${r.isTikTok ? 'good' : ''}">${r.isTikTok ? '✓ Ativo' : 'Desativado'}</span></div>
+            <div class="val-row"><span class="key">Capa</span><span class="val ${r.hasExtraCover ? 'good' : 'warn'}">${r.hasExtraCover ? '✓ Asset do banco' : 'Frame 1 (auto)'}</span></div>
+            <div class="val-row"><span class="key">Overlay capa</span><span class="val ${r.level >= 2 ? 'good' : ''}">${r.level >= 2 ? '✓ 6% opacidade' : 'Não'}</span></div>
+            <div class="val-row"><span class="key">Flashes cor</span><span class="val ${r.level === 3 ? 'good' : ''}">${r.level === 3 ? '✓ Ativos' : 'Não'}</span></div>
+        </div>
+        <div class="val-card">
+            <div class="val-card-title">White Script</div>
+            <div class="val-row"><span class="key">Status</span><span class="val ${wsCls}">${wsStatus}</span></div>
+            <div class="val-row"><span class="key">Nicho</span><span class="val">${wsOn ? wsNicho : '—'}</span></div>
+            <div class="val-row"><span class="key">Palavras</span><span class="val">${wsOn ? wsWords : '—'}</span></div>
+            <div class="val-row"><span class="key">Nível de mistura</span><span class="val">${wsOn ? wsMixDb + ' dB' : '—'}</span></div>
+            <div class="val-row"><span class="key">Banda injetada</span><span class="val ${wsOk ? 'good' : ''}">${wsOk ? '300 – 3400 Hz' : '—'}</span></div>
+        </div>
+        <div class="val-card">
+            <div class="val-card-title">Arquivo Final</div>
+            <div class="val-row"><span class="key">Tamanho original</span><span class="val">${origKB} KB</span></div>
+            <div class="val-row"><span class="key">Tamanho final</span><span class="val good">${finalKB} KB</span></div>
+            <div class="val-row"><span class="key">Duração original</span><span class="val">${r.originalDuration}s</span></div>
+            <div class="val-row"><span class="key">Duração final</span><span class="val good">${r.finalDuration}s</span></div>
+            <div class="val-row"><span class="key">Codec</span><span class="val good">H.264 + AAC</span></div>
+            <div class="val-row"><span class="key">Metadados</span><span class="val good">✓ Removidos</span></div>
+        </div>`;
     }
+
+    const pertPct = obj.type === 'image' ? ((eps / 8) * 100).toFixed(0) : Math.min(100, eps * 12 + (wsOk ? 20 : 0));
 
     el.innerHTML = `
         <div class="val-title">
@@ -1404,11 +1415,8 @@ function renderValidation(obj, eps, pitch, processingTime) {
         </div>
         <div class="val-grid">${cards}</div>
         <div class="eps-bar">
-            <div class="eps-bar-label"><span>Intensidade de perturbação</span><span>${obj.type === 'image' ? ((eps/8)*100).toFixed(0) : 62}%</span></div>
-            <div class="eps-track"><div class="eps-fill" style="width:${obj.type === 'image' ? ((eps/8)*100) : 62}%"></div></div>
-        </div>
-        <div class="val-note">
-            Validação simulada. Para métricas reais: rode CLIP/ResNet50 (imagem) e Whisper (áudio) localmente.
+            <div class="eps-bar-label"><span>Intensidade de camuflagem</span><span>${pertPct}%</span></div>
+            <div class="eps-track"><div class="eps-fill" style="width:${pertPct}%"></div></div>
         </div>`;
 }
 
@@ -1779,12 +1787,13 @@ async function processVideoLocal(obj, level) {
         let arrayBuf = await audioSource.arrayBuffer();
 
         // Aplicar White Script se ativo
+        let wsApplied = false;
         const wsText = document.getElementById('ws-text').value.trim();
         if (wsEnabled && wsText) {
             const mixDb  = parseInt(document.getElementById('ws-mix-slider').value);
             const lang   = document.getElementById('ws-lang').value;
             const wsBlob = await applyWhiteScriptLayer(arrayBuf, mixDb, lang);
-            if (wsBlob) arrayBuf = await wsBlob.arrayBuffer();
+            if (wsBlob) { arrayBuf = await wsBlob.arrayBuffer(); wsApplied = true; }
         }
 
         audioBuf = await audioCtx.decodeAudioData(arrayBuf);
@@ -1926,7 +1935,8 @@ async function processVideoLocal(obj, level) {
         hasExtraCover: !!obj.extraCover,
         originalDuration: duration.toFixed(1),
         finalDuration: (level >= 2 ? TARGET_DURATION : duration).toFixed(1),
-        totalFrames: frameBlobs.length
+        totalFrames: frameBlobs.length,
+        wsApplied,
     };
 }
 

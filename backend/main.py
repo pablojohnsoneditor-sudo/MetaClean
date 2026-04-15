@@ -15,12 +15,26 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 WORK_DIR = Path("/tmp/metaclean")
 WORK_DIR.mkdir(exist_ok=True)
 
+def cleanup_stale_jobs(max_age_seconds: int = 600):
+    """Remove job dirs mais velhos que max_age_seconds para liberar disco."""
+    import time
+    now = time.time()
+    for d in WORK_DIR.iterdir():
+        if d.is_dir():
+            try:
+                age = now - d.stat().st_mtime
+                if age > max_age_seconds:
+                    shutil.rmtree(d, ignore_errors=True)
+            except Exception:
+                pass
+
 # ═══════════════════════════════════════════════════════════════════════════
 # HEALTH CHECK
 # ═══════════════════════════════════════════════════════════════════════════
 
 @app.get("/health")
 def health():
+    cleanup_stale_jobs()  # limpa jobs velhos a cada health check (a cada 10s)
     return {"status": "ok"}
 
 # ═══════════════════════════════════════════════════════════════════════════

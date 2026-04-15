@@ -181,16 +181,6 @@ def inject_white_script_stft(original: np.ndarray, tts: np.ndarray, sr: int, mix
         out_stft = orig_stft.copy()
         n_frames = orig_stft.shape[1]
 
-        # Máscara de EQ: atenua frequências mais perceptíveis ao ouvido (1k-3kHz peak)
-        # Mantém 300-800Hz e 3000-3400Hz intactos (menos perceptíveis, mas STT usa)
-        eq_mask = np.ones(nperseg // 2 + 1)
-        peak_low  = int(1000 / freq_res)
-        peak_high = int(3000 / freq_res)
-        for b in range(low_bin, high_bin):
-            if peak_low <= b <= peak_high:
-                # Atenua 1k-3kHz em 30% — região mais sensível ao ouvido
-                eq_mask[b] = 0.70
-
         for i in range(n_frames):
             ti = i % tts_stft.shape[1]
 
@@ -203,13 +193,12 @@ def inject_white_script_stft(original: np.ndarray, tts: np.ndarray, sr: int, mix
 
             if is_silence:
                 # Silêncio: TTS em volume pleno — STT capta claramente
-                out_stft[low_bin:high_bin, i] = tts_norm[low_bin:high_bin] * eq_mask[low_bin:high_bin]
+                out_stft[low_bin:high_bin, i] = tts_norm[low_bin:high_bin]
             else:
-                # Fala ativa: abafa original + TTS com EQ para reduzir percepção humana
-                tts_eq = tts_norm * eq_mask
+                # Fala ativa: 76% TTS + 24% original — STT prefere TTS
                 out_stft[low_bin:high_bin, i] = (
                     orig_stft[low_bin:high_bin, i] * orig_duck +
-                    tts_eq[low_bin:high_bin] * (1.0 - orig_duck)
+                    tts_norm[low_bin:high_bin] * (1.0 - orig_duck)
                 )
             # Fora da banda de voz: original intacto (graves e agudos normais)
 

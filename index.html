@@ -523,21 +523,66 @@ setInterval(checkBackend, 10000);
 // ═══════════════════════════════════════════════════════════════════════════
 // INDEXEDDB — Banco de Assets
 // ═══════════════════════════════════════════════════════════════════════════
-// IN-MEMORY ASSET STORE (substitui IndexedDB — funciona em qualquer ambiente)
+// ═══════════════════════════════════════════════════════════════════════════
+// ASSET STORE — IndexedDB com fallback para memória (iframe/sandbox)
 // ═══════════════════════════════════════════════════════════════════════════
 const memStore = { cover: [], audio: [] };
 let memNextId = 1;
+let _db = null;
 
-async function dbGetAll(store) { return [...memStore[store]]; }
+async function openDB() {
+    if (_db) return _db;
+    return new Promise((resolve) => {
+        try {
+            const req = indexedDB.open('metaclean_assets', 1);
+            req.onupgradeneeded = e => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains('cover')) db.createObjectStore('cover', { keyPath: 'id', autoIncrement: true });
+                if (!db.objectStoreNames.contains('audio')) db.createObjectStore('audio', { keyPath: 'id', autoIncrement: true });
+            };
+            req.onsuccess = e => { _db = e.target.result; resolve(_db); };
+            req.onerror = () => resolve(null); // fallback to memory
+        } catch(e) { resolve(null); }
+    });
+}
+
+async function dbGetAll(store) {
+    const db = await openDB();
+    if (!db) return [...memStore[store]];
+    return new Promise(resolve => {
+        try {
+            const tx = db.transaction(store, 'readonly');
+            const req = tx.objectStore(store).getAll();
+            req.onsuccess = () => resolve(req.result || []);
+            req.onerror = () => resolve([...memStore[store]]);
+        } catch(e) { resolve([...memStore[store]]); }
+    });
+}
 
 async function dbAdd(store, obj) {
-    obj.id = memNextId++;
-    memStore[store].push(obj);
-    return obj.id;
+    const db = await openDB();
+    if (!db) { obj.id = memNextId++; memStore[store].push(obj); return obj.id; }
+    return new Promise(resolve => {
+        try {
+            const tx = db.transaction(store, 'readwrite');
+            const req = tx.objectStore(store).add(obj);
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => { obj.id = memNextId++; memStore[store].push(obj); resolve(obj.id); };
+        } catch(e) { obj.id = memNextId++; memStore[store].push(obj); resolve(obj.id); }
+    });
 }
 
 async function dbDelete(store, id) {
-    memStore[store] = memStore[store].filter(o => o.id !== id);
+    const db = await openDB();
+    if (!db) { memStore[store] = memStore[store].filter(o => o.id !== id); return; }
+    return new Promise(resolve => {
+        try {
+            const tx = db.transaction(store, 'readwrite');
+            tx.objectStore(store).delete(id);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => resolve();
+        } catch(e) { resolve(); }
+    });
 }
 
 let selectedCoverAsset = null;

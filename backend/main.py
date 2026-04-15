@@ -5,8 +5,9 @@ import subprocess
 import numpy as np
 import io
 from pathlib import Path
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from starlette.background import BackgroundTask
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
@@ -112,12 +113,12 @@ async def process_audio_ws(
 
         fname = audio.filename.rsplit(".", 1)[0]
         return FileResponse(str(output_path), media_type="audio/wav",
-                            filename=f"ws_{fname}.wav")
+                            filename=f"ws_{fname}.wav",
+                            background=BackgroundTask(shutil.rmtree, job_dir, True))
 
     except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
-    finally:
         shutil.rmtree(job_dir, ignore_errors=True)
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 
 def inject_white_script_stft(original: np.ndarray, tts: np.ndarray, sr: int, mix_db: float) -> np.ndarray:

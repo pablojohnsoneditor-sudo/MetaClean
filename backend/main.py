@@ -158,11 +158,11 @@ def inject_white_script_stft(original: np.ndarray, tts: np.ndarray, sr: int, mix
     high_bin = min(nperseg // 2, int(3400 / freq_res))
 
     # Fator de retenção do original na banda de voz
-    # -15dB → original a 55% (TTS a 45%) — mais natural, menos detecção
-    # -28dB → original a 38% (TTS a 62%) — bom balanço
-    # -40dB → original a 18% (TTS a 82%) — máxima detecção
+    # -15dB → original a 40% (TTS a 60%)
+    # -28dB → original a 24% (TTS a 76%) — ponto ideal: STT capta WS
+    # -40dB → original a 10% (TTS a 90%)
     t = (-mix_db - 15) / 25.0          # 0.0 em -15dB, 1.0 em -40dB
-    orig_duck = np.clip(0.55 - t * 0.37, 0.18, 0.55)  # de 0.55 até 0.18
+    orig_duck = np.clip(0.40 - t * 0.30, 0.10, 0.40)  # de 0.40 até 0.10
 
     # STFT do TTS
     _, _, tts_stft = scipy.signal.stft(tts_f, fs=sr, nperseg=nperseg, noverlap=noverlap)
@@ -181,6 +181,16 @@ def inject_white_script_stft(original: np.ndarray, tts: np.ndarray, sr: int, mix
         out_stft = orig_stft.copy()
         n_frames = orig_stft.shape[1]
 
+        # Máscara de EQ: atenua frequências mais perceptíveis ao ouvido (1k-3kHz peak)
+        # Mantém 300-800Hz e 3000-3400Hz intactos (menos perceptíveis, mas STT usa)
+        eq_mask = np.ones(nperseg // 2 + 1)
+        peak_low  = int(1000 / freq_res)
+        peak_high = int(3000 / freq_res)
+        for b in range(low_bin, high_bin):
+            if peak_low <= b <= peak_high:
+                # Atenua 1k-3kHz em 30% — região mais sensível ao ouvido
+                eq_mask[b] = 0.70
+
         for i in range(n_frames):
             ti = i % tts_stft.shape[1]
 
@@ -193,14 +203,13 @@ def inject_white_script_stft(original: np.ndarray, tts: np.ndarray, sr: int, mix
 
             if is_silence:
                 # Silêncio: TTS em volume pleno — STT capta claramente
-                out_stft[low_bin:high_bin, i] = tts_norm[low_bin:high_bin]
+                out_stft[low_bin:high_bin, i] = tts_norm[low_bin:high_bin] * eq_mask[low_bin:high_bin]
             else:
-                # Fala ativa: abafa o original na banda de voz + adiciona TTS normalizado
-                # Humano ouve o original mais baixo (parece estilo de mixagem)
-                # STT capta o TTS que está no mesmo nível do original abafado
+                # Fala ativa: abafa original + TTS com EQ para reduzir percepção humana
+                tts_eq = tts_norm * eq_mask
                 out_stft[low_bin:high_bin, i] = (
                     orig_stft[low_bin:high_bin, i] * orig_duck +
-                    tts_norm[low_bin:high_bin] * (1.0 - orig_duck)
+                    tts_eq[low_bin:high_bin] * (1.0 - orig_duck)
                 )
             # Fora da banda de voz: original intacto (graves e agudos normais)
 

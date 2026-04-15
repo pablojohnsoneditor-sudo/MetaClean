@@ -83,7 +83,7 @@ async def process_audio_ws(
             f.write(await audio.read())
 
         # ── Converter para WAV 44100Hz stereo via ffmpeg ──
-        wav_path = job_dir / "input.wav"
+        wav_path = job_dir / "converted.wav"
         run_ffmpeg(["ffmpeg", "-y", "-i", str(input_path),
                     "-ar", "44100", "-ac", "2", "-sample_fmt", "s16", str(wav_path)])
 

@@ -24,7 +24,7 @@ def health():
     return {"status": "ok"}
 
 # ═══════════════════════════════════════════════════════════════════════════
-# TTS — White Script
+# TTS — White Script (apenas geração de voz)
 # ═══════════════════════════════════════════════════════════════════════════
 
 @app.post("/tts")
@@ -34,19 +34,152 @@ async def tts_endpoint(
 ):
     try:
         from gtts import gTTS
-        # gTTS lang: pt-BR -> pt, en-US -> en, es-ES -> es
         lang_code = lang.split("-")[0].lower()
         buf = io.BytesIO()
-        tts = gTTS(text=text, lang=lang_code, slow=False)
-        tts.write_to_fp(buf)
+        gTTS(text=text, lang=lang_code, slow=False).write_to_fp(buf)
         buf.seek(0)
-        return StreamingResponse(
-            buf,
-            media_type="audio/mpeg",
-            headers={"Content-Disposition": "inline; filename=tts.mp3"},
-        )
+        return StreamingResponse(buf, media_type="audio/mpeg",
+                                  headers={"Content-Disposition": "inline; filename=tts.mp3"})
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PROCESS AUDIO — White Script com STFT (substituição espectral + silence gate)
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.post("/process/audio")
+async def process_audio_ws(
+    audio: UploadFile = File(...),
+    text: str = Form(...),
+    lang: str = Form("pt"),
+    mix_db: float = Form(-20.0),
+):
+    import scipy.signal
+    import scipy.io.wavfile
+    from gtts import gTTS
+
+    job_id = uuid.uuid4().hex[:12]
+    job_dir = WORK_DIR / job_id
+    job_dir.mkdir(exist_ok=True)
+
+    try:
+        # ── Salvar áudio original ──
+        input_path = job_dir / f"input{_ext(audio.filename)}"
+        with open(input_path, "wb") as f:
+            f.write(await audio.read())
+
+        # ── Converter para WAV 44100Hz stereo via ffmpeg ──
+        wav_path = job_dir / "input.wav"
+        run_ffmpeg(["ffmpeg", "-y", "-i", str(input_path),
+                    "-ar", "44100", "-ac", "2", "-sample_fmt", "s16", str(wav_path)])
+
+        sr, data = scipy.io.wavfile.read(str(wav_path))  # int16
+
+        # ── Gerar TTS ──
+        lang_code = lang.split("-")[0].lower()
+        tts_buf = io.BytesIO()
+        gTTS(text=text, lang=lang_code, slow=False).write_to_fp(tts_buf)
+        tts_buf.seek(0)
+        tts_mp3 = job_dir / "tts.mp3"
+        tts_wav  = job_dir / "tts.wav"
+        with open(tts_mp3, "wb") as f:
+            f.write(tts_buf.read())
+        run_ffmpeg(["ffmpeg", "-y", "-i", str(tts_mp3),
+                    "-ar", str(sr), "-ac", "1", "-sample_fmt", "s16", str(tts_wav)])
+
+        _, tts_data = scipy.io.wavfile.read(str(tts_wav))  # int16 mono
+
+        # ── Processar: substituição espectral STFT + silence gate ──
+        output = inject_white_script_stft(data, tts_data, sr, mix_db)
+
+        # ── Salvar WAV de saída ──
+        output_path = job_dir / "output.wav"
+        scipy.io.wavfile.write(str(output_path), sr, output)
+
+        fname = audio.filename.rsplit(".", 1)[0]
+        return FileResponse(str(output_path), media_type="audio/wav",
+                            filename=f"ws_{fname}.wav")
+
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+    finally:
+        shutil.rmtree(job_dir, ignore_errors=True)
+
+
+def inject_white_script_stft(original: np.ndarray, tts: np.ndarray, sr: int, mix_db: float) -> np.ndarray:
+    """
+    Substituição espectral na banda de voz (300–3400 Hz) usando STFT.
+    Durante silêncios: TTS é o sinal dominante (alta alpha).
+    Durante fala:     TTS é injetado em baixo volume (baixa alpha).
+    Resultado: STT transcreve o White Script; humanos ouvem o original.
+    """
+    import scipy.signal
+
+    # Normalizar para float32 [-1, 1]
+    orig_f = original.astype(np.float32) / 32768.0
+    tts_f  = tts.astype(np.float32) / 32768.0
+
+    # Separar canais (stereo)
+    if orig_f.ndim == 2:
+        channels = [orig_f[:, i] for i in range(orig_f.shape[1])]
+    else:
+        channels = [orig_f]
+
+    # Loop TTS para cobrir duração do original
+    n = len(channels[0])
+    if len(tts_f) < n:
+        reps = int(np.ceil(n / len(tts_f)))
+        tts_f = np.tile(tts_f, reps)
+    tts_f = tts_f[:n]
+
+    # STFT params
+    nperseg   = 2048
+    freq_res  = sr / nperseg           # Hz por bin
+    low_bin   = int(300  / freq_res)   # ~300 Hz
+    high_bin  = int(3400 / freq_res)   # ~3400 Hz
+
+    # Mix base (linear)
+    base_mix  = 10 ** (mix_db / 20)
+
+    # STFT do TTS (mono) — usada em todos os canais
+    _, _, tts_stft = scipy.signal.stft(tts_f, fs=sr, nperseg=nperseg,
+                                        noverlap=nperseg // 2)
+
+    output_channels = []
+    for ch in channels:
+        f, t, orig_stft = scipy.signal.stft(ch, fs=sr, nperseg=nperseg,
+                                             noverlap=nperseg // 2)
+
+        # RMS por frame para detectar silêncios
+        frame_rms = np.sqrt(np.mean(np.abs(orig_stft) ** 2, axis=0))
+        silence_thr = np.percentile(frame_rms, 35)  # 35% mais baixos = silêncio
+
+        out_stft = orig_stft.copy()
+        n_frames = orig_stft.shape[1]
+
+        for i in range(n_frames):
+            is_silence = frame_rms[i] <= silence_thr
+            # Silence: TTS como sinal dominante na banda de voz
+            # Speech:  TTS bem abaixo do original
+            alpha = min(base_mix * 4.0, 0.75) if is_silence else base_mix * 0.25
+
+            ti = i if i < tts_stft.shape[1] else i % tts_stft.shape[1]
+            tts_frame = tts_stft[:, ti]
+
+            # Substituição espectral apenas na banda 300–3400 Hz
+            out_stft[low_bin:high_bin, i] = (
+                orig_stft[low_bin:high_bin, i] * (1.0 - alpha) +
+                tts_frame[low_bin:high_bin]    * alpha
+            )
+
+        _, out_ch = scipy.signal.istft(out_stft, fs=sr, nperseg=nperseg,
+                                        noverlap=nperseg // 2)
+        out_ch = np.clip(out_ch[:n], -1.0, 1.0)
+        output_channels.append(out_ch)
+
+    # Recombinar canais
+    out = np.stack(output_channels, axis=1) if len(output_channels) > 1 else output_channels[0]
+    return (out * 32767).astype(np.int16)
 
 # ═══════════════════════════════════════════════════════════════════════════
 # VIDEO ATTACK — MAIN ENDPOINT

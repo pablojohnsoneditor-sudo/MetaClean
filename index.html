@@ -1038,7 +1038,7 @@ async function processImage(obj, eps, iter) {
     const img = await loadImg(obj.file);
     const canvas = document.createElement('canvas');
     canvas.width = img.width; canvas.height = img.height;
-    const ctx  = canvas.getContext('2d');
+    const ctx  = canvas.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(img, 0, 0);
     // Geometric + color transforms (anti-pHash)
     applyAllTransforms(canvas, ctx);
@@ -1556,7 +1556,7 @@ function extractFirstFrame(video) {
     return new Promise((res) => {
         const c = document.createElement('canvas');
         c.width = video.videoWidth; c.height = video.videoHeight;
-        const ctx = c.getContext('2d');
+        const ctx = c.getContext('2d', { willReadFrequently: true });
         ctx.drawImage(video, 0, 0);
         res(c);
     });
@@ -1675,7 +1675,7 @@ async function processVideoLocal(obj, level) {
     // Get cover image (from asset bank or first frame)
     const coverCanvas = document.createElement('canvas');
     coverCanvas.width = w; coverCanvas.height = h;
-    const coverCtx = coverCanvas.getContext('2d');
+    const coverCtx = coverCanvas.getContext('2d', { willReadFrequently: true });
     if (obj.extraCover) {
         const coverImg = await loadImg(obj.extraCover);
         coverCtx.drawImage(coverImg, 0, 0, w, h);
@@ -1697,7 +1697,7 @@ async function processVideoLocal(obj, level) {
 
     const canvas = document.createElement('canvas');
     canvas.width = w; canvas.height = h;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
     // Collect processed frames as blobs
     const frameBlobs = [];

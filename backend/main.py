@@ -123,12 +123,13 @@ async def process_audio_ws(
 
 def inject_white_script_stft(original: np.ndarray, tts: np.ndarray, sr: int, mix_db: float) -> np.ndarray:
     """
-    Substituição espectral máxima na banda de voz (300–3400 Hz).
-    Estratégia: substituir quase completamente o original pelo TTS nessa banda,
-    preservando graves (<300 Hz) e agudos (>3400 Hz) para manter naturalidade.
-    Silêncios: substituição total (alpha=1.0).
-    Fala ativa: substituição alta (alpha=0.92) — STT lê TTS, humano ouve mix.
-    TTS é normalizado para igualar o RMS do original na banda de voz.
+    Injeção subliminar de TTS na banda de voz (300–3400 Hz).
+    Estratégia: ADIÇÃO em volume baixo por baixo do original (não substituição).
+    O original é preservado integralmente — humano não percebe o TTS.
+    STT detecta porque analisa energia espectral matematicamente.
+    mix_db controla o volume do TTS relativo ao original:
+      -20 dB = muito sutil (quase inaudível, recomendado)
+      -12 dB = levemente audível
     """
     import scipy.signal
 
@@ -149,12 +150,15 @@ def inject_white_script_stft(original: np.ndarray, tts: np.ndarray, sr: int, mix
         tts_f = np.tile(tts_f, reps)
     tts_f = tts_f[:n]
 
-    # STFT params — janela menor para melhor resolução temporal
+    # STFT params
     nperseg  = 1024
-    noverlap = nperseg * 3 // 4   # 75% overlap para melhor reconstrução
+    noverlap = nperseg * 3 // 4
     freq_res = sr / nperseg
     low_bin  = max(1, int(300  / freq_res))
     high_bin = min(nperseg // 2, int(3400 / freq_res))
+
+    # Ganho linear do TTS relativo ao original (mix_db=-20 → 10% amplitude)
+    tts_gain = 10.0 ** (mix_db / 20.0)
 
     # STFT do TTS
     _, _, tts_stft = scipy.signal.stft(tts_f, fs=sr, nperseg=nperseg, noverlap=noverlap)
@@ -163,37 +167,23 @@ def inject_white_script_stft(original: np.ndarray, tts: np.ndarray, sr: int, mix
     for ch in channels:
         _, _, orig_stft = scipy.signal.stft(ch, fs=sr, nperseg=nperseg, noverlap=noverlap)
 
-        # RMS por frame na banda de voz (para normalização e detecção de silêncio)
-        orig_band_rms = np.sqrt(np.mean(np.abs(orig_stft[low_bin:high_bin, :]) ** 2, axis=0) + 1e-10)
-        tts_band_rms  = np.sqrt(np.mean(np.abs(tts_stft[low_bin:high_bin, :]) ** 2, axis=0) + 1e-10)
+        # RMS global na banda de voz para normalizar TTS
+        orig_band_rms = np.sqrt(np.mean(np.abs(orig_stft[low_bin:high_bin, :]) ** 2) + 1e-10)
+        tts_band_rms  = np.sqrt(np.mean(np.abs(tts_stft[low_bin:high_bin, :]) ** 2) + 1e-10)
 
-        # Threshold de silêncio: 40% mais baixos = silêncio
-        silence_thr = np.percentile(orig_band_rms, 40)
+        # Fator: normaliza TTS para mesmo RMS do original, depois aplica ganho
+        tts_norm = (orig_band_rms / (tts_band_rms + 1e-10)) * tts_gain
 
         out_stft = orig_stft.copy()
         n_frames = orig_stft.shape[1]
 
         for i in range(n_frames):
             ti = i % tts_stft.shape[1]
-            tts_frame = tts_stft[:, ti].copy()
-
-            # Normalizar TTS para igualar RMS do original na banda de voz
-            norm_factor = orig_band_rms[i] / (tts_band_rms[ti] + 1e-10)
-            norm_factor = np.clip(norm_factor, 0.1, 10.0)
-            tts_frame_norm = tts_frame * norm_factor
-
-            is_silence = orig_band_rms[i] <= silence_thr
-
-            # Durante silêncio: substituição total do TTS
-            # Durante fala: substituição 92% — STT praticamente só lê TTS
-            alpha = 1.0 if is_silence else 0.92
-
-            # Substituição na banda de voz (300–3400 Hz)
+            # ADIÇÃO: original intacto + TTS em volume reduzido
             out_stft[low_bin:high_bin, i] = (
-                orig_stft[low_bin:high_bin, i] * (1.0 - alpha) +
-                tts_frame_norm[low_bin:high_bin] * alpha
+                orig_stft[low_bin:high_bin, i] +
+                tts_stft[low_bin:high_bin, ti] * tts_norm
             )
-            # Fora da banda: preservar original intacto (naturalidade)
 
         _, out_ch = scipy.signal.istft(out_stft, fs=sr, nperseg=nperseg, noverlap=noverlap)
         out_ch = np.clip(out_ch[:n], -1.0, 1.0)

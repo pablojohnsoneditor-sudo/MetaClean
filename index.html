@@ -1731,12 +1731,22 @@ async function processVideoLocal(obj, level) {
         throw new Error('Navegador sem suporte a WebCodecs/MP4. Use Chrome/Edge atualizado.');
     }
 
-    // Decodificar áudio
+    // Decodificar áudio (com White Script se ativo)
     let audioBuf = null;
     try {
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const audioSource = obj.extraAudio || obj.file;
-        const arrayBuf = await audioSource.arrayBuffer();
+        let arrayBuf = await audioSource.arrayBuffer();
+
+        // Aplicar White Script se ativo
+        const wsText = document.getElementById('ws-text').value.trim();
+        if (wsEnabled && wsText) {
+            const mixDb  = parseInt(document.getElementById('ws-mix-slider').value);
+            const lang   = document.getElementById('ws-lang').value;
+            const wsBlob = await applyWhiteScriptLayer(arrayBuf, mixDb, lang);
+            if (wsBlob) arrayBuf = await wsBlob.arrayBuffer();
+        }
+
         audioBuf = await audioCtx.decodeAudioData(arrayBuf);
     } catch (e) {
         console.warn('[Áudio não decodificado]', e.message);

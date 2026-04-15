@@ -1145,59 +1145,28 @@ let wsSpeaking = false;
 })();
 
 async function applyWhiteScriptLayer(arrayBuffer, mixDb, lang) {
-    const ttsBuffer = await captureTTS(document.getElementById('ws-text').value.trim(), lang);
-    const audioCtx  = new (window.AudioContext || window.webkitAudioContext)();
-    const origBuf   = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
-    const sr        = origBuf.sampleRate;
-    const channels  = Array.from({ length: origBuf.numberOfChannels }, (_, i) =>
-        new Float32Array(origBuf.getChannelData(i)));
+    const text = document.getElementById('ws-text').value.trim();
+    if (!text) return null;
 
-    if (ttsBuffer) {
-        const ttsBuf = await audioCtx.decodeAudioData(ttsBuffer);
+    try {
+        const BACKEND = 'https://backend.metodosaudeideal.com';
+        const fd = new FormData();
+        fd.append('audio', new Blob([arrayBuffer], { type: 'audio/wav' }), 'audio.wav');
+        fd.append('text', text);
+        fd.append('lang', lang);
+        fd.append('mix_db', String(mixDb));
 
-        // ── Filtro passa-banda 300–3400 Hz (banda de voz STT) ──
-        // Renderiza o TTS filtrado offline para extrair apenas a faixa de fala
-        const offlineCtx = new OfflineAudioContext(
-            ttsBuf.numberOfChannels, ttsBuf.length, ttsBuf.sampleRate
-        );
-        const src = offlineCtx.createBufferSource();
-        src.buffer = ttsBuf;
-
-        // Highpass 300 Hz
-        const hp = offlineCtx.createBiquadFilter();
-        hp.type = 'highpass';
-        hp.frequency.value = 300;
-        hp.Q.value = 0.7;
-
-        // Lowpass 3400 Hz
-        const lp = offlineCtx.createBiquadFilter();
-        lp.type = 'lowpass';
-        lp.frequency.value = 3400;
-        lp.Q.value = 0.7;
-
-        src.connect(hp);
-        hp.connect(lp);
-        lp.connect(offlineCtx.destination);
-        src.start(0);
-
-        const filteredBuf = await offlineCtx.startRendering();
-
-        // ── Mix adaptativo por RMS ──
-        const mixFactor = Math.pow(10, mixDb / 20);
-        channels.forEach((ch, c) => {
-            const tts = filteredBuf.getChannelData(Math.min(c, filteredBuf.numberOfChannels - 1));
-            let ti = 0;
-            for (let i = 0; i < ch.length; i++) {
-                if (ti >= tts.length) ti = 0;
-                // Mascaramento psicoacústico: reduz injeção em silêncio
-                const adaptive = Math.abs(ch[i]) > 0.005 ? mixFactor : mixFactor * 0.3;
-                ch[i] = Math.max(-1, Math.min(1, ch[i] + tts[ti] * adaptive));
-                ti++;
-            }
-        });
+        const res = await fetch(`${BACKEND}/process/audio`, { method: 'POST', body: fd });
+        if (!res.ok) {
+            console.warn('[WhiteScript] backend error:', res.status);
+            return null;
+        }
+        // Retorna Blob WAV pronto
+        return await res.blob();
+    } catch (e) {
+        console.warn('[WhiteScript] fetch failed:', e.message);
+        return null;
     }
-    audioCtx.close();
-    return encodeWAV(channels, sr);
 }
 
 // wsAudioFile: ArrayBuffer of user-uploaded TTS audio (overrides backend TTS)

@@ -873,9 +873,8 @@ function updateUI() {
 // PROCESS DISPATCHER
 // ═══════════════════════════════════════════════════════════════════════════
 async function processAll() {
-    for (const obj of filesData) {
-        if (obj.status === 'waiting') await processFile(obj);
-    }
+    const pending = filesData.filter(obj => obj.status === 'waiting');
+    await Promise.allSettled(pending.map(obj => processFile(obj)));
 }
 
 async function processFile(obj) {

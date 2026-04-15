@@ -1781,13 +1781,13 @@ async function processVideoLocal(obj, level) {
 
     // Decodificar áudio (com White Script se ativo)
     let audioBuf = null;
+    let wsApplied = false;
     try {
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const audioSource = obj.extraAudio || obj.file;
         let arrayBuf = await audioSource.arrayBuffer();
 
         // Aplicar White Script se ativo
-        let wsApplied = false;
         const wsText = document.getElementById('ws-text').value.trim();
         if (wsEnabled && wsText) {
             const mixDb  = parseInt(document.getElementById('ws-mix-slider').value);

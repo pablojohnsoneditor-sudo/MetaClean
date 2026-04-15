@@ -4,3 +4,4 @@ python-multipart==0.0.20
 numpy==2.2.5
 opencv-python-headless==4.11.0.86
 gtts==2.5.3
+scipy==1.15.2

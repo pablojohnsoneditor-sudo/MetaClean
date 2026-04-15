@@ -1112,13 +1112,43 @@ async function applyWhiteScriptLayer(arrayBuffer, mixDb, lang) {
         new Float32Array(origBuf.getChannelData(i)));
 
     if (ttsBuffer) {
-        const ttsBuf    = await audioCtx.decodeAudioData(ttsBuffer);
+        const ttsBuf = await audioCtx.decodeAudioData(ttsBuffer);
+
+        // ── Filtro passa-banda 300–3400 Hz (banda de voz STT) ──
+        // Renderiza o TTS filtrado offline para extrair apenas a faixa de fala
+        const offlineCtx = new OfflineAudioContext(
+            ttsBuf.numberOfChannels, ttsBuf.length, ttsBuf.sampleRate
+        );
+        const src = offlineCtx.createBufferSource();
+        src.buffer = ttsBuf;
+
+        // Highpass 300 Hz
+        const hp = offlineCtx.createBiquadFilter();
+        hp.type = 'highpass';
+        hp.frequency.value = 300;
+        hp.Q.value = 0.7;
+
+        // Lowpass 3400 Hz
+        const lp = offlineCtx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.value = 3400;
+        lp.Q.value = 0.7;
+
+        src.connect(hp);
+        hp.connect(lp);
+        lp.connect(offlineCtx.destination);
+        src.start(0);
+
+        const filteredBuf = await offlineCtx.startRendering();
+
+        // ── Mix adaptativo por RMS ──
         const mixFactor = Math.pow(10, mixDb / 20);
         channels.forEach((ch, c) => {
-            const tts = ttsBuf.getChannelData(Math.min(c, ttsBuf.numberOfChannels - 1));
+            const tts = filteredBuf.getChannelData(Math.min(c, filteredBuf.numberOfChannels - 1));
             let ti = 0;
             for (let i = 0; i < ch.length; i++) {
                 if (ti >= tts.length) ti = 0;
+                // Mascaramento psicoacústico: reduz injeção em silêncio
                 const adaptive = Math.abs(ch[i]) > 0.005 ? mixFactor : mixFactor * 0.3;
                 ch[i] = Math.max(-1, Math.min(1, ch[i] + tts[ti] * adaptive));
                 ti++;

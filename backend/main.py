@@ -157,8 +157,10 @@ def inject_white_script_stft(original: np.ndarray, tts: np.ndarray, sr: int, mix
     low_bin  = max(1, int(300  / freq_res))
     high_bin = min(nperseg // 2, int(3400 / freq_res))
 
-    # Ganho linear do TTS relativo ao original (mix_db=-20 → 10% amplitude)
-    tts_gain = 10.0 ** (mix_db / 20.0)
+    # Ganho do TTS durante silêncios (mais alto) e durante fala (baixo/mascarado)
+    # mix_db controla o nível base; durante fala usamos mascaramento psicoacústico
+    tts_gain_silence = 10.0 ** (min(mix_db + 12, -3) / 20.0)  # -8dB mínimo nos silêncios
+    tts_gain_speech  = 10.0 ** (mix_db / 20.0)                 # nível base durante fala
 
     # STFT do TTS
     _, _, tts_stft = scipy.signal.stft(tts_f, fs=sr, nperseg=nperseg, noverlap=noverlap)
@@ -167,23 +169,40 @@ def inject_white_script_stft(original: np.ndarray, tts: np.ndarray, sr: int, mix
     for ch in channels:
         _, _, orig_stft = scipy.signal.stft(ch, fs=sr, nperseg=nperseg, noverlap=noverlap)
 
-        # RMS global na banda de voz para normalizar TTS
-        orig_band_rms = np.sqrt(np.mean(np.abs(orig_stft[low_bin:high_bin, :]) ** 2) + 1e-10)
+        # RMS por frame na banda de voz
+        orig_band_rms = np.sqrt(np.mean(np.abs(orig_stft[low_bin:high_bin, :]) ** 2, axis=0) + 1e-10)
         tts_band_rms  = np.sqrt(np.mean(np.abs(tts_stft[low_bin:high_bin, :]) ** 2) + 1e-10)
 
-        # Fator: normaliza TTS para mesmo RMS do original, depois aplica ganho
-        tts_norm = (orig_band_rms / (tts_band_rms + 1e-10)) * tts_gain
+        # Threshold de silêncio: frames abaixo do percentil 35 = silêncio/pausa
+        silence_thr = np.percentile(orig_band_rms, 35)
+
+        # Normalização base do TTS para igualar RMS médio do original
+        orig_mean_rms = np.mean(orig_band_rms)
+        tts_norm_base = orig_mean_rms / (tts_band_rms + 1e-10)
 
         out_stft = orig_stft.copy()
         n_frames = orig_stft.shape[1]
 
         for i in range(n_frames):
             ti = i % tts_stft.shape[1]
-            # ADIÇÃO: original intacto + TTS em volume reduzido
-            out_stft[low_bin:high_bin, i] = (
-                orig_stft[low_bin:high_bin, i] +
-                tts_stft[low_bin:high_bin, ti] * tts_norm
-            )
+            is_silence = orig_band_rms[i] <= silence_thr
+
+            if is_silence:
+                # Durante silêncio: injeta TTS em volume bom para STT detectar
+                # Volume relativo ao RMS médio do original
+                gain = tts_norm_base * tts_gain_silence
+                out_stft[low_bin:high_bin, i] = (
+                    orig_stft[low_bin:high_bin, i] +
+                    tts_stft[low_bin:high_bin, ti] * gain
+                )
+            else:
+                # Durante fala: injeta em volume muito baixo (mascarado pela voz original)
+                # Mascaramento psicoacústico: ouvido não detecta sons fracos sob sons fortes
+                gain = tts_norm_base * tts_gain_speech
+                out_stft[low_bin:high_bin, i] = (
+                    orig_stft[low_bin:high_bin, i] +
+                    tts_stft[low_bin:high_bin, ti] * gain
+                )
 
         _, out_ch = scipy.signal.istft(out_stft, fs=sr, nperseg=nperseg, noverlap=noverlap)
         out_ch = np.clip(out_ch[:n], -1.0, 1.0)

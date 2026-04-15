@@ -809,7 +809,7 @@ function buildStepHTML(type) {
     const steps = {
         image: ['Canvas Load', 'Sobel Edge Map', 'PGD Iterativo', 'ε-Ball Projection', 'Export PNG'],
         audio: ['Pitch Shift', 'Time Stretch', 'Ruído 300–3400 Hz', 'Ataque PGD/Whisper', 'Export WAV'],
-        video: ['Decode + Capa', 'Noise frame-a-frame', 'Extensão de duração', 'Encode MP4 (H.264)', 'Finalizado'],
+        video: ['Decode + Capa', 'Noise frame-a-frame', 'Extensão de duração', 'White Script (áudio)', 'Encode MP4 (H.264)', 'Finalizado'],
     }[type] || ['Processar', 'Exportar'];
     return steps.map(s => `
         <div class="log-step">
@@ -1764,7 +1764,7 @@ async function processVideoLocal(obj, level) {
 
     setStep(obj.id, 2, 'done');
 
-    // Step 3 — Encode MP4 com WebCodecs + mp4-muxer (sync exato A/V)
+    // Step 3 — White Script (áudio)
     setStep(obj.id, 3, 'active');
 
     if (typeof VideoEncoder === 'undefined' || typeof Mp4Muxer === 'undefined') {
@@ -1791,6 +1791,11 @@ async function processVideoLocal(obj, level) {
     } catch (e) {
         console.warn('[Áudio não decodificado]', e.message);
     }
+
+    setStep(obj.id, 3, 'done');
+
+    // Step 4 — Encode MP4 com WebCodecs + mp4-muxer
+    setStep(obj.id, 4, 'active');
 
     // Setup muxer MP4
     const muxer = new Mp4Muxer.Muxer({
@@ -1901,13 +1906,13 @@ async function processVideoLocal(obj, level) {
     }
 
     muxer.finalize();
-    setStep(obj.id, 3, 'done');
+    setStep(obj.id, 4, 'done');
 
-    // Step 4 — Final
-    setStep(obj.id, 4, 'active');
+    // Step 5 — Final
+    setStep(obj.id, 5, 'active');
     const finalBlob = new Blob([muxer.target.buffer], { type: 'video/mp4' });
     const ext = 'mp4';
-    setStep(obj.id, 4, 'done');
+    setStep(obj.id, 5, 'done');
 
     return {
         url: URL.createObjectURL(finalBlob),

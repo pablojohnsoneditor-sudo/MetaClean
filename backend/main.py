@@ -158,11 +158,11 @@ def inject_white_script_stft(original: np.ndarray, tts: np.ndarray, sr: int, mix
     high_bin = min(nperseg // 2, int(3400 / freq_res))
 
     # Fator de retenção do original na banda de voz
-    # -15dB → original a 40% (TTS a 60%)
-    # -28dB → original a 24% (TTS a 76%) — ponto ideal: STT capta WS
+    # -15dB → original a 32% (TTS a 68%)
+    # -28dB → original a 20% (TTS a 80%) — ponto ideal: STT capta WS
     # -40dB → original a 10% (TTS a 90%)
     t = (-mix_db - 15) / 25.0          # 0.0 em -15dB, 1.0 em -40dB
-    orig_duck = np.clip(0.40 - t * 0.30, 0.10, 0.40)  # de 0.40 até 0.10
+    orig_duck = np.clip(0.32 - t * 0.22, 0.10, 0.32)  # de 0.32 até 0.10
 
     # STFT do TTS
     _, _, tts_stft = scipy.signal.stft(tts_f, fs=sr, nperseg=nperseg, noverlap=noverlap)
